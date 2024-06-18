@@ -12,11 +12,103 @@
 #include <signal.h>
 #include <time.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
+#include <pthread.h>
 
 #define PORT 8080
 #define MAX_LEN 1024
+#define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
+#define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
+#define path_channels "/home/etern1ty/sisop_works/FP/fp/DiscorIT/channels.csv"
 
 #define DEBUG
+
+void register_func(char username[MAX_LEN], char password[MAX_LEN]) {
+    make_folder(path);
+    char salt[MAX_LEN], hashed[MAX_LEN];
+    FILE *fp;   
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    bool isExist = false;
+    int userid = 1;
+    char *role;
+
+    fp = fopen(path_user, "r");
+    if (fp == NULL) {
+        fopen(path_user, "w");
+        fp = fopen(path_user, "r");
+    }
+
+    fseek(fp, 0, SEEK_END);
+    if (ftell(fp) == 0) role = "ROOT";
+    else role = "USER";
+    rewind(fp);
+
+    while ((read = getline(&line, &len, fp)) != -1) {
+        if (strstr(line, username) != NULL) {
+            isExist = true;
+            break;
+        }
+        userid++;
+    }
+
+    if (isExist) {
+        printf("%s already registered\n", username);
+        exit(EXIT_FAILURE);
+    }
+
+    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "theusernameandorpasswordsaltcode");
+    strcpy(hashed, crypt(password, salt));
+
+    fp = fopen(path_user, "a");
+    if (fp == NULL) {
+        printf("Error opening file\n");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(fp, "%d,%s,%s,%s\n", userid, username, hashed, role);
+    fclose(fp);
+
+    printf("%s registered\n", username);
+}
+
+void login_func(char username[MAX_LEN], char password[MAX_LEN]) {
+    FILE *fp;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    bool isExist = false;
+    char salt[MAX_LEN], hashed[MAX_LEN], file_hashed[MAX_LEN];
+    int file_userid;
+    char file_username[MAX_LEN], file_role[MAX_LEN];
+
+    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "theusernameandorpasswordsaltcode");
+    strcpy(hashed, crypt(password, salt));
+
+    fp = fopen(path_user, "r");
+    if (fp == NULL) {
+        printf("Error opening file\n");
+        exit(EXIT_FAILURE);
+    }
+
+    while ((read = getline(&line, &len, fp)) != -1) {
+        sscanf(line, "%d,%[^,],%[^,],%s", &file_userid, file_username, file_hashed, file_role);
+        if (strcmp(username, file_username) == 0 && strcmp(hashed, file_hashed) == 0) {
+            isExist = true;
+            break;
+        }
+    }
+
+    fclose(fp);
+
+    if (!isExist) {
+        printf("Invalid username or password\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("%s logged in\n", username);
+}
 
 int main(int argc, char *argv[]) {
     int serv_socket, cli_socket;
@@ -87,5 +179,14 @@ int main(int argc, char *argv[]) {
         #ifdef DEBUG
             printf("Connection established - [%s] on port [%d]\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
         #endif
+
+        // receive command from client
+        memset(cmd, 0, sizeof(cmd));
+        if (recv(cli_socket, cmd, MAX_LEN, 0) < 0) {
+            perror("Receive failed");
+            exit(EXIT_FAILURE);
+        }
+
+        // discorit handler
     }
 }

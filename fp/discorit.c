@@ -10,105 +10,85 @@
 #include <arpa/inet.h>
 
 #define MAX_LEN 1024
-#define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
-#define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
-#define path_channels "/home/etern1ty/sisop_works/FP/fp/DiscorIT/channels.csv"
+#define MAX_USER 100
+#define PORT 8080
+#define IP "192.168.1.21"
+
+int server;
 
 void make_folder(char *folder_path) {
     struct stat st = {0};
-    if (stat(folder_path, &st) == -1) {
-        mkdir(folder_path, 0777);
-    }
+    if (stat(folder_path, &st) == -1) mkdir(folder_path, 0777);
 }
 
-void register_func(char username[MAX_LEN], char password[MAX_LEN]) {
-    make_folder(path);
-    char salt[MAX_LEN], hashed[MAX_LEN];
-    FILE *fp;   
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    bool isExist = false;
-    int userid = 1;
-    char *role;
+void cmd_func(const char *cmd, char *usr, char *ch, char *room) {
+    if (send(server, cmd, strlen(cmd), 0) < 0) perror("Command send failed");
 
-    fp = fopen(path_user, "r");
-    if (fp == NULL) {
-        fopen(path_user, "w");
-        fp = fopen(path_user, "r");
-    }
+    char resp[MAX_LEN];
+    memset(resp, 0, sizeof(resp));
 
-    fseek(fp, 0, SEEK_END);
-    if (ftell(fp) == 0) role = "ROOT";
-    else role = "USER";
-    rewind(fp);
+    if (recv(server, resp, sizeof(resp), 0) < 0) perror("Response receive failed");
+    else {
+        if (strstr(resp, "Key:") != NULL) {
+            char key[MAX_USER];
+            printf("Key: ");
+            fgets(key, sizeof(key), stdin);
+            key[strcspn(key, "\n")] = 0;
 
-    while ((read = getline(&line, &len, fp)) != -1) {
-        if (strstr(line, username) != NULL) {
-            isExist = true;
-            break;
-        }
-        userid++;
-    }
-
-    if (isExist) {
-        printf("%s already registered\n", username);
-        exit(EXIT_FAILURE);
-    }
-
-    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "theusernameandorpasswordsaltcode");
-    strcpy(hashed, crypt(password, salt));
-
-    fp = fopen(path_user, "a");
-    if (fp == NULL) {
-        printf("Error opening file\n");
-        exit(EXIT_FAILURE);
-    }
-
-    fprintf(fp, "%d,%s,%s,%s\n", userid, username, hashed, role);
-    fclose(fp);
-
-    printf("%s registered\n", username);
-}
-
-void login_func(char username[MAX_LEN], char password[MAX_LEN]) {
-    FILE *fp;
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    bool isExist = false;
-    char salt[MAX_LEN], hashed[MAX_LEN], file_hashed[MAX_LEN];
-    int file_userid;
-    char file_username[MAX_LEN], file_role[MAX_LEN];
-
-    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "theusernameandorpasswordsaltcode");
-    strcpy(hashed, crypt(password, salt));
-
-    fp = fopen(path_user, "r");
-    if (fp == NULL) {
-        printf("Error opening file\n");
-        exit(EXIT_FAILURE);
-    }
-
-    while ((read = getline(&line, &len, fp)) != -1) {
-        sscanf(line, "%d,%[^,],%[^,],%s", &file_userid, file_username, file_hashed, file_role);
-        if (strcmp(username, file_username) == 0 && strcmp(hashed, file_hashed) == 0) {
-            isExist = true;
-            break;
+            if (send(server, key, strlen(key), 0) < 0) perror("Key send failed");
+            memset(resp, 0, sizeof(resp));
+            if (recv(server, resp, sizeof(resp), 0) < 0) perror("Response receive failed");
+            else {
+            }
         }
     }
-
-    fclose(fp);
-
-    if (!isExist) {
-        printf("Invalid username or password\n");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("%s logged in\n", username);
 }
 
 int main(int argc, char *argv[]) {
+    // server connection start
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    struct hostent *address;
+    int num1 = 10, num2 = 20, result;
+
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (sock < 0) {
+        perror("Error opening socket");
+        address = gethostbyname(IP);
+        if (address == NULL) {
+            fprintf(stderr, "ERROR, no such host\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    int opt = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+
+    if (inet_pton(AF_INET, IP, &serv_addr.sin_addr) <= 0) {
+        perror("Invalid address/ Address not supported");
+        exit(EXIT_FAILURE);
+    }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Connection failed");
+        exit(EXIT_FAILURE);
+    }
+    // server connection end
+
+    char cmd[MAX_LEN];
+    char username[MAX_USER], channel[MAX_USER], room[MAX_USER];
+    memset(cmd, 0, sizeof(cmd));
+    
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
         exit(EXIT_FAILURE);
