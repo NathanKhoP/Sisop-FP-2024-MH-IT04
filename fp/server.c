@@ -17,13 +17,30 @@
 
 #define PORT 8080
 #define MAX_LEN 1024
+#define MAX_USER 100
 #define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
 #define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
 #define path_channels "/home/etern1ty/sisop_works/FP/fp/DiscorIT/channels.csv"
 
 #define DEBUG
 
-void register_func(char username[MAX_LEN], char password[MAX_LEN]) {
+typedef struct {
+    int sock;
+    struct sockaddr_in addr;
+    char userLogged[MAX_USER];
+    char channelLogged[MAX_USER];
+    char roleLogged[MAX_USER];
+    char roomLogged[MAX_USER];
+} connection_t;
+
+void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *conn) {
+    if (username == NULL || password == NULL) {
+        char resp[] = "Username or password cannot be empty\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
     make_folder(path);
     char salt[MAX_LEN], hashed[MAX_LEN];
     FILE *fp;   
@@ -54,8 +71,13 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN]) {
     }
 
     if (isExist) {
-        printf("%s already registered\n", username);
-        exit(EXIT_FAILURE);
+        char resp[100];
+        snprintf(resp, sizeof(resp), "%s already registered", username);
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        fclose(fp);
+        return;
     }
 
     snprintf(salt, MAX_LEN, "$2a$10$%.22s", "theusernameandorpasswordsaltcode");
@@ -70,10 +92,14 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN]) {
     fprintf(fp, "%d,%s,%s,%s\n", userid, username, hashed, role);
     fclose(fp);
 
-    printf("%s registered\n", username);
+    char resp[100];
+    snprintf(resp, sizeof(resp), "%s registered", username);
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
 }
 
-void login_func(char username[MAX_LEN], char password[MAX_LEN]) {
+void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *conn) {
     FILE *fp;
     char *line = NULL;
     size_t len = 0;
@@ -88,13 +114,20 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN]) {
 
     fp = fopen(path_user, "r");
     if (fp == NULL) {
-        printf("Error opening file\n");
-        exit(EXIT_FAILURE);
+        char resp[] = "Error opening file\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
     }
 
     while ((read = getline(&line, &len, fp)) != -1) {
+        char *token = strtok(line, ",");
+        token = strtok(NULL, ",");
         sscanf(line, "%d,%[^,],%[^,],%s", &file_userid, file_username, file_hashed, file_role);
         if (strcmp(username, file_username) == 0 && strcmp(hashed, file_hashed) == 0) {
+            sprintf(conn->userLogged, "%s", username);
+            token = strtok(file_role, ",");
+            sprintf(conn->roleLogged, "%s", token);
             isExist = true;
             break;
         }
@@ -103,11 +136,56 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN]) {
     fclose(fp);
 
     if (!isExist) {
-        printf("Invalid username or password\n");
-        exit(EXIT_FAILURE);
+        char resp[] = "Invalid username or password\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
     }
 
-    printf("%s logged in\n", username);
+    char resp[100];
+    snprintf(resp, sizeof(resp), "%s logged in", username);
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+}
+
+void *discorit_handler(void *input) {
+    connection_t *conn = (connection_t *)input;
+    char buf[MAX_LEN], *resp;
+    int n;
+
+    while (n = recv(conn->sock, buf, sizeof(buf), 0) > 0) {
+        buf[n] = 0;
+        printf("Received: %s\n", buf);
+
+        char *token = strtok(buf, " ");
+        if (token == NULL) {
+            resp = "Invalid command\n";
+            if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                perror("Send failed");
+                exit(EXIT_FAILURE);
+            }
+            continue;
+        }   
+        if (strcmp(token, "REGISTER") == 0) {
+            char *usr = strtok(NULL, " ");
+            char *pass = strtok(NULL, " ");
+            register_func(usr, pass, conn);
+        }
+        else if (strcmp(token, "LOGIN") == 0) {
+            char *usr = strtok(NULL, " ");
+            char *pass = strtok(NULL, " ");
+            login_func(usr, pass, conn);
+        }
+        else {
+            printf("Invalid command\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    free(conn);
+    pthread_exit(0);
+
 }
 
 int main(int argc, char *argv[]) {
@@ -180,13 +258,15 @@ int main(int argc, char *argv[]) {
             printf("Connection established - [%s] on port [%d]\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
         #endif
 
-        // receive command from client
-        memset(cmd, 0, sizeof(cmd));
-        if (recv(cli_socket, cmd, MAX_LEN, 0) < 0) {
-            perror("Receive failed");
-            exit(EXIT_FAILURE);
-        }
-
-        // discorit handler
+        // discorit handler thread creation
+        pthread_t tid;
+        connection_t *connection = (connection_t *)malloc(sizeof(connection_t));
+        connection->sock = cli_socket;
+        connection->addr = cli_addr;
+        memset(connection->userLogged, 0, sizeof(connection->userLogged));
+        memset(connection->channelLogged, 0, sizeof(connection->channelLogged));
+        memset(connection->roleLogged, 0, sizeof(connection->roleLogged));
+        memset(connection->roomLogged, 0, sizeof(connection->roomLogged));
+        pthread_create(&tid, NULL, discorit_handler, (void *)connection);
     }
 }
