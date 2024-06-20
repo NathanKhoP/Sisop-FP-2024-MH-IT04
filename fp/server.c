@@ -33,12 +33,18 @@ typedef struct {
     char roomLogged[MAX_USER];
 } connection_t;
 
+void make_folder(char *folder_path) {
+    struct stat st = {0};
+    if (stat(folder_path, &st) == -1) mkdir(folder_path, 0777);
+}
+
 void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *conn) {
     if (username == NULL || password == NULL) {
         char resp[] = "Username or password cannot be empty\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
         }
+        fsync(conn->sock);
         return;
     }
     make_folder(path);
@@ -63,7 +69,7 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t 
     rewind(fp);
 
     while ((read = getline(&line, &len, fp)) != -1) {
-        if (strstr(line, username) != NULL) {
+        if (strstr(line, username) != NULL) { // strstr has an issue with usernames that are a substring of another username, but it's fine for now
             isExist = true;
             break;
         }
@@ -76,6 +82,7 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t 
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
         }
+        fsync(conn->sock);
         fclose(fp);
         return;
     }
@@ -94,9 +101,11 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t 
 
     char resp[100];
     snprintf(resp, sizeof(resp), "%s registered", username);
+    printf("%s\n", resp);
     if (write(conn->sock, resp, strlen(resp)) < 0) {
         perror("Response send failed");
     }
+    fsync(conn->sock);
 }
 
 void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *conn) {
@@ -118,44 +127,180 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *co
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
         }
+        fsync(conn->sock);
     }
 
     while ((read = getline(&line, &len, fp)) != -1) {
         char *token = strtok(line, ",");
         token = strtok(NULL, ",");
-        sscanf(line, "%d,%[^,],%[^,],%s", &file_userid, file_username, file_hashed, file_role);
-        if (strcmp(username, file_username) == 0 && strcmp(hashed, file_hashed) == 0) {
+        if (strcmp(token, username) != 0) continue;
+
+        isExist = true;
+        token = strtok(NULL, ",");
+        sprintf(file_hashed, "%s", token);
+
+        if (strcmp(hashed, file_hashed) == 0) {
             sprintf(conn->userLogged, "%s", username);
             token = strtok(file_role, ",");
             sprintf(conn->roleLogged, "%s", token);
-            isExist = true;
-            break;
+        }
+        else {
+            char resp[] = "Invalid password\n";
+            if (write(conn->sock, resp, strlen(resp)) < 0) {
+                perror("Response send failed");
+            }
+            fsync(conn->sock);
         }
     }
 
     fclose(fp);
 
     if (!isExist) {
-        char resp[] = "Invalid username or password\n";
+        char resp[] = "Invalid username\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
         }
+        fsync(conn->sock);
     }
-
-    char resp[100];
-    snprintf(resp, sizeof(resp), "%s logged in", username);
-    if (write(conn->sock, resp, strlen(resp)) < 0) {
-        perror("Response send failed");
+    
+    else {
+        char resp[100];
+        snprintf(resp, sizeof(resp), "%s logged in", username);
+        printf("%s\n", resp);
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        fsync(conn->sock);
     }
 }
+
+// ====================================================================================================
+// ====================================================================================================
+// TODO: Implement the following functions
+// ====================================================================================================
+// ====================================================================================================
+
+void new_channel (const char new_path, connection_t* conn) {
+
+}
+
+void new_room (const char new_path, connection_t* conn) {
+
+}
+
+void list_channel (const char new_path, connection_t* conn) {
+
+}
+
+void list_room (const char new_path, connection_t* conn) {
+
+}
+
+void list_user (const char new_path, connection_t* conn) {
+
+}
+
+void join_channel (const char new_path, connection_t* conn) {
+
+}
+
+void join_room (const char new_path, connection_t* conn) {
+
+}
+
+void send_message (const char new_path, connection_t* conn) {
+
+}
+
+void see_message (const char new_path, connection_t* conn) {
+
+}
+
+void edit_message (const char new_path, connection_t* conn) {
+
+}
+
+void edit_channel (const char new_path, connection_t* conn) {
+
+}
+
+void edit_room (const char new_path, connection_t* conn) {
+
+}
+
+void edit_profile (const char new_path, connection_t* conn) {
+
+}
+
+void remove_message (const char new_path, connection_t* conn) {
+
+}
+
+void remove_channel (const char new_path, connection_t* conn) {
+
+}
+
+void remove_room (const char new_path, connection_t* conn) {
+
+}
+
+void remove_all_room (const char new_path, connection_t* conn) {
+
+}
+
+void remove_folder (const char new_path, connection_t* conn) {
+
+}
+
+void remove_user (const char new_path, connection_t* conn) {
+
+}
+
+void ban_user (const char new_path, connection_t* conn) {
+
+}
+
+void unban_user (const char new_path, connection_t* conn) {
+
+}
+
+// ROOT
+void list_root (const char new_path, connection_t* conn) {
+
+}
+
+void edit_user (const char new_path, connection_t* conn) {
+
+}
+
+void remove_root (const char new_path, connection_t* conn) {
+
+}
+
+void exit_func (const char new_path, connection_t* conn) {
+
+}
+// ROOT
+
+// ====================================================================================================
+// ====================================================================================================
+// TODO: Implement the functions above
+// ====================================================================================================
+// ====================================================================================================
 
 void *discorit_handler(void *input) {
     connection_t *conn = (connection_t *)input;
     char buf[MAX_LEN], *resp;
     int n;
 
-    while (n = recv(conn->sock, buf, sizeof(buf), 0) > 0) {
-        buf[n] = 0;
+    while (1) {
+        n = recv(conn->sock, buf, sizeof(buf), 0);
+        if (n <= 0) {
+            perror("Receive failed");
+            break;
+        }
+
+        buf[n] = '\0';
         printf("Received: %s\n", buf);
 
         char *token = strtok(buf, " ");
@@ -163,10 +308,11 @@ void *discorit_handler(void *input) {
             resp = "Invalid command\n";
             if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
                 perror("Send failed");
-                exit(EXIT_FAILURE);
+                break;
             }
             continue;
-        }   
+        }
+
         if (strcmp(token, "REGISTER") == 0) {
             char *usr = strtok(NULL, " ");
             char *pass = strtok(NULL, " ");
@@ -179,13 +325,13 @@ void *discorit_handler(void *input) {
         }
         else {
             printf("Invalid command\n");
-            exit(EXIT_FAILURE);
+            break;
         }
     }
 
+    close(conn->sock);
     free(conn);
     pthread_exit(0);
-
 }
 
 int main(int argc, char *argv[]) {
@@ -243,13 +389,10 @@ int main(int argc, char *argv[]) {
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
-
-    char cmd[MAX_LEN], stat[MAX_LEN], *resp;
-    int mark;
-
+    
     while (1) {
         // accept incoming connection
-        if ((cli_socket = accept(serv_socket, (struct sockaddr *)&serv_addr, (socklen_t *)&addrlen)) < 0) {
+        if ((cli_socket = accept(serv_socket, (struct sockaddr *)&cli_addr, (socklen_t *)&addrlen)) < 0) {
             perror("Accept failed");
             exit(EXIT_FAILURE);
         }
