@@ -165,7 +165,7 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *co
     
     else {
         char resp[100];
-        snprintf(resp, sizeof(resp), "%s logged in", username);
+        sprintf(resp, "%s logged in", username);
         printf("%s\n", resp);
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
@@ -180,106 +180,270 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t *co
 // ====================================================================================================
 // ====================================================================================================
 
-void new_channel (const char new_path, connection_t* conn) {
+void new_channel (const char *username, const char *channel_name, const char *key, connection_t* conn) {
+    FILE *fp = fopen(path_channels, "a");
+    if (fp == NULL) {
+        perror("Error opening file");
+        return;
+    }
+
+    char line[MAX_LEN];
+    bool chanExist = false;
+    int count = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (strcmp(token, channel_name) == 0) {
+            chanExist = true;
+            break;
+        }
+        count++;
+    }
+
+    if (chanExist) {
+        char resp[100];
+        sprintf(resp, "%s already exists", channel_name);
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        fsync(conn->sock);
+        fclose(fp);
+        return;
+    }
+
+    fseek(fp, 0, SEEK_END);
+
+    char salt[MAX_LEN], hashed[MAX_LEN];
+    sprintf(salt, "$2a$10$%.22s", "thechannelbcryptsaltstringcode");
+    strcpy(hashed, crypt(key, salt));
+
+    fprintf(fp, "%d,%s,%s\n", count+1, channel_name, hashed);
+    fclose(fp);
+
+    char ch_path[512];
+    sprintf(ch_path, "%s/%s", path, channel_name);
+    make_folder(ch_path);
+
+    sprintf(ch_path, "%s/%s/admin", path, channel_name);
+    make_folder(ch_path);
+
+    sprintf(ch_path, "%s/%s/admin/auth.csv", path, channel_name);
+    FILE *auth = fopen(ch_path, "w+");
+    if (auth == NULL) {
+        char resp[] = "Error opening/writing auth.csv\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+    }
+    else {
+        char user_id[10];
+        FILE *user = fopen(path_user, "r");
+        if (user == NULL) {
+            char resp[] = "Error opening users.csv\n";
+            if (write(conn->sock, resp, strlen(resp)) < 0) {
+                perror("Response send failed");
+            }
+            fclose(auth);
+            return;
+        }
+
+        char line_user[MAX_LEN];
+        bool userExist = false;
+
+        while (fgets(line_user, sizeof(line_user), user)) {
+            char *token = strtok(line_user, ",");
+            sprintf(user_id, "%s", token);
+            token = strtok(NULL, ",");
+            if (strcmp(token, username) == 0) {
+                userExist = true;
+                break;
+            }
+        }
+        fclose(user);
+
+        if (!userExist) {
+            char resp[] = "User not found\n";
+            if (write(conn->sock, resp, strlen(resp)) < 0) {
+                perror("Response send failed");
+            }
+            fclose(auth);
+            return;
+        }
+        else {
+            fprintf(auth, "%s,%s,%s\n", user_id, username, "ADMIN");
+            fclose(auth);
+        }
+    }
+
 
 }
 
-void new_room (const char new_path, connection_t* conn) {
+void new_room (const char *username, const char *channel_name, const char *room, connection_t* conn) {
+    char path_auth[512];
+    sprintf(path_auth, "%s/%s/admin/auth.csv", path, channel_name);
+
+    FILE *auth = fopen(path_auth, "r");
+    if (auth == NULL) {
+        char resp[] = "Error opening auth.csv - room\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
+
+    char line[MAX_LEN];
+    bool isAdmin = false;
+    bool isRoot = false;
+
+    while (fgets(line, sizeof(line), auth)) {
+        char *token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+
+        if (strcmp(token, username) == 0) {
+            token = strtok(NULL, ",");
+            if (strcmp(token, "ADMIN") == 0) {
+                isAdmin = true;
+            }
+            else if (strcmp(token, "ROOT") == 0) {
+                isRoot = true;
+            }
+        }
+    }
+
+    fclose(auth);
+
+    if (!isAdmin && !isRoot) {
+        char resp[] = "You are not an admin, you can't make a room on this channel\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
+
+    char room_path[512];
+    sprintf(room_path, "%s/%s/%s", path, channel_name, room);
+    struct stat st = {0};
+    if (stat (room_path, &st) == -1) make_folder(room_path);
+    else {
+        char resp[] = "Room already exists\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+    }
+
+    char chat_path[512];
+    sprintf(room_path, "%s/%s/%s/chat.csv", path, channel_name, room);
+    FILE *chat = fopen(room_path, "w+");
+    if (chat == NULL) {
+        char resp[] = "Error opening/writing chat.csv\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+    }
+    else fclose(chat);
+
+    char resp[] = "Room created\n";
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+}
+
+void list_channel(connection_t* conn) {
 
 }
 
-void list_channel (const char new_path, connection_t* conn) {
+void list_room(const char* channel, connection_t* conn) {
 
 }
 
-void list_room (const char new_path, connection_t* conn) {
+void list_user(const char* channel, connection_t* conn) {
 
 }
 
-void list_user (const char new_path, connection_t* conn) {
+void join_channel(const char* username, const char* channel, connection_t* conn) {
 
 }
 
-void join_channel (const char new_path, connection_t* conn) {
+void join_room(const char* channel, const char* room, connection_t* conn) {
 
 }
 
-void join_room (const char new_path, connection_t* conn) {
+void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* conn) {
 
 }
 
-void send_message (const char new_path, connection_t* conn) {
+void see_message(const char* channel, const char* room, connection_t* conn) {
 
 }
 
-void see_message (const char new_path, connection_t* conn) {
+void edit_message(const char* channel, const char* room, int id_chat, const char* new_text, connection_t* conn) {
 
 }
 
-void edit_message (const char new_path, connection_t* conn) {
+void edit_channel(const char* old_channel, const char* new_channel, connection_t* conn) {
 
 }
 
-void edit_channel (const char new_path, connection_t* conn) {
+void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn) {
 
 }
 
-void edit_room (const char new_path, connection_t* conn) {
+void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn) {
 
 }
 
-void edit_profile (const char new_path, connection_t* conn) {
+void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn) {
 
 }
 
-void remove_message (const char new_path, connection_t* conn) {
+void remove_channel(const char* channel, connection_t* conn) {
 
 }
 
-void remove_channel (const char new_path, connection_t* conn) {
+void remove_room(const char* channel, const char* room, connection_t* conn) {
 
 }
 
-void remove_room (const char new_path, connection_t* conn) {
+void remove_all_room(const char* channel, connection_t* conn) {
 
 }
 
-void remove_all_room (const char new_path, connection_t* conn) {
+void remove_folder(const char* folder_path, connection_t* conn) {
 
 }
 
-void remove_folder (const char new_path, connection_t* conn) {
+void remove_user(const char* channel, const char* target, connection_t* conn) {
 
 }
 
-void remove_user (const char new_path, connection_t* conn) {
+void ban_user(const char* channel, const char* target, connection_t* conn) {
 
 }
 
-void ban_user (const char new_path, connection_t* conn) {
-
-}
-
-void unban_user (const char new_path, connection_t* conn) {
+void unban_user(const char* channel, const char* target, connection_t* conn) {
 
 }
 
 // ROOT
-void list_root (const char new_path, connection_t* conn) {
+void list_root(connection_t* conn) {
 
 }
 
-void edit_user (const char new_path, connection_t* conn) {
+void edit_user(const char* target, const char* new_value, bool is_password, connection_t* conn) {
 
 }
 
-void remove_root (const char new_path, connection_t* conn) {
+void remove_root(const char* target, connection_t* conn) {
 
 }
 
-void exit_func (const char new_path, connection_t* conn) {
+void exit_func(connection_t* conn) {
 
 }
+
 // ROOT
 
 // ====================================================================================================
