@@ -352,15 +352,108 @@ void new_room (const char *username, const char *channel_name, const char *room,
 }
 
 void list_channel(connection_t* conn) {
+    FILE *fp = fopen(path_channels, "r");
+    if (fp == NULL) {
+        char resp[] = "Error opening channels.csv\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
 
+    char line[MAX_LEN];
+    char resp[MAX_LEN] = "";
+    int count = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+        
+        sprintf(resp + strlen(resp), "%s ", token);
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        count++;
+    }
+
+    if (count == 0) {
+        char resp[] = "No channel available\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+    }
+
+    fclose(fp);
 }
 
 void list_room(const char* channel, connection_t* conn) {
+    char path_room[512];
+    sprintf(path_room, "%s/%s", path, channel);
+    DIR *dir = opendir(path_room);
+    if(dir == NULL) {
+        char resp[] = "Error opening directory\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
 
+    struct dirent *entry;
+    char resp[MAX_LEN] = "";
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, "admin") != 0) {
+            char dir_path[512];
+            sprintf(dir_path, "%s/%s", path_room, entry->d_name);
+
+            struct stat st;
+            stat(dir_path, &st);
+            if (S_ISDIR(st.st_mode)) sprintf(resp + strlen(resp), "%s ", entry->d_name);
+        }
+    }
+    
+    if (strlen(resp) == 0) {
+        sprintf(resp, "No room available\n");
+    }
+
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+
+    fclose(dir);
 }
 
 void list_user(const char* channel, connection_t* conn) {
+    char user_path[512];
+    sprintf(user_path, "%s/%s/admin/auth.csv", path, channel);
+    FILE *auth = fopen(user_path, "r");
+    if (auth == NULL) {
+        char resp[] = "Error opening auth.csv\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
+    
+    char line[MAX_LEN];
+    char resp[MAX_LEN] = "";
 
+    while(fgets(line, sizeof(line), auth)) {
+        char *token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+
+        sprintf(resp + strlen(resp), "%s ", token);
+    }
+
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+
+    fclose(auth);
 }
 
 void join_channel(const char* username, const char* channel, connection_t* conn) {
@@ -428,8 +521,33 @@ void unban_user(const char* channel, const char* target, connection_t* conn) {
 }
 
 // ROOT
-void list_root(connection_t* conn) {
+void list_user_root(connection_t* conn) {
+    FILE *fp = fopen(path_user, "r");
+    if (fp == NULL) {
+        char resp[] = "Error opening users.csv\n";
+        if (write(conn->sock, resp, strlen(resp)) < 0) {
+            perror("Response send failed");
+        }
+        return;
+    }
 
+    char line[MAX_LEN];
+    char resp[MAX_LEN] = "";
+
+    while (fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+
+        sprintf(resp + strlen(resp), "%s ", token);
+    }
+
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+
+    fclose(fp);
 }
 
 void edit_user(const char* target, const char* new_value, bool is_password, connection_t* conn) {
