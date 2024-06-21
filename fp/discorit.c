@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
     
     if (argc < 2) {
         printf("Usage: %s <command>\n", argv[0]);
-        exit(EXIT_FAILURE);
+        return 1;
     }
     else if (strcmp(argv[1], "REGISTER") == 0) {
         if (strcmp(argv[3], "-p") == 0) {
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
         }
         else {
             printf("Usage: %s REGISTER <username> -p <password>\n", argv[0]);
-            exit(EXIT_FAILURE);
+            return 1;
         }
     }
     else if (strcmp(argv[1], "LOGIN") == 0) {
@@ -84,15 +84,48 @@ int main(int argc, char *argv[]) {
             sprintf(usr, "%s", argv[2]);
             char *pass = argv[4];
             sprintf(cmd, "LOGIN %s %s", usr, pass);
+
+            if (send(sock, cmd, strlen(cmd), 0) < 0) perror("Command send failed");
+            char resp[MAX_LEN];
+            memset(resp, 0, sizeof(resp));
+
+            int n = recv(sock, resp, MAX_LEN - 1, 0);
+            if (n < 0) perror("Response receive failed");
+            else {
+                printf("%s\n", resp);
+                if (strstr(resp, "logged in") != NULL) {
+                    while (1) {
+                        if (strlen(room) > 0) printf("[%s/%s/%s] ", usr, channel, room);
+                        else if (strlen(channel) > 0) printf("[%s/%s] ", usr, channel);
+                        else printf("[%s] ", usr);
+
+                        if (fgets(cmd, MAX_LEN, stdin) == NULL) continue;
+                        cmd[strcspn(cmd, "\n")] = 0;
+
+                        if (strcmp("JOIN", cmd) == 0) {
+                            if (strlen(channel) > 0) sprintf(room, "%s", cmd + 5);
+                            else if (strlen(channel) == 0) sprintf(channel, "%s", cmd + 5);
+                        }
+                        else if (strcmp("EXIT", cmd) == 0) {
+                            if (strlen(room) > 0) room[0] = '\0';
+                            if (strlen(channel) > 0) channel[0] = '\0';
+                        }
+                        else if (strcmp("EDIT PROFILE SELF -u" , cmd) == 0) {
+                            sprintf(usr, "%s", cmd + 21);
+                        }
+                        cmd_func(cmd, usr, channel, room);
+                    }
+                }
+            }
         }
         else {
             printf("Usage: %s LOGIN <username> -p <password>\n", argv[0]);
-            exit(EXIT_FAILURE);
+            return 1;
         }
     }
     else {
         printf("Invalid command\n");
-        exit(EXIT_FAILURE);
+        return 1;
     }
 
     cmd_func(cmd, usr, channel, room);
