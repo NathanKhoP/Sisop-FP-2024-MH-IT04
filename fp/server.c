@@ -51,6 +51,15 @@ void remove_message(const char* channel, const char* room, int chat_id, connecti
 void remove_channel(const char* channel, connection_t* conn);
 void remove_room(const char* channel, const char* room, connection_t* conn);
 void remove_all_room(const char* channel, connection_t* conn);
+void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* connection);
+void send_response(connection_t* connection, const char* message);
+bool process_chat_file(FILE* original_file, FILE* temp_file, int message_id, const char* new_text);
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection);
+void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* connection);
+bool is_room_name_in_use(const char* channel, const char* room_name);
+bool does_room_exist(const char* channel, const char* room_name);
+bool rename_room(const char* channel, const char* old_room, const char* new_room);
+void log_room_change(const char* channel, const char* old_room, const char* new_room, const char* username);
 
 
 void make_folder(char* folder_path) {
@@ -1009,8 +1018,116 @@ void finalize_channel_update(const char* temp_file_path, const char* old_channel
     }
 
 void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn) {
+    if (!has_permission_to_edit_room(conn, channel)) {
+        send_response(conn, "You do not have permission to edit the room");
+        return;
+        }
 
+    if (is_room_name_in_use(channel, new_room)) {
+        send_response(conn, "Room name already in use");
+        return;
+        }
+
+    if (!does_room_exist(channel, old_room)) {
+        char response[100];
+        snprintf(response, sizeof(response), "Room %s does not exist in channel %s", old_room, channel);
+        send_response(conn, response);
+        return;
+        }
+
+    if (rename_room(channel, old_room, new_room)) {
+        log_room_change(channel, old_room, new_room, conn->userLogged);
+        char response[100];
+        snprintf(response, sizeof(response), "%s successfully changed to %s", old_room, new_room);
+        send_response(conn, response);
+        }
+    else {
+        send_response(conn, "Failed to change room name");
+        }
     }
+
+bool has_permission_to_edit_room(connection_t* conn, const char* channel) {
+    return is_user_root(conn->userLogged) || is_user_admin(conn->userLogged, channel);
+    }
+
+bool is_user_root(const char* username) {
+    FILE* users_file = fopen(path_user, "r");
+    if (!users_file) return false;
+
+    char line[256];
+    bool is_root = false;
+    while (fgets(line, sizeof(line), users_file)) {
+        char* token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (token && strcmp(token, username) == 0) {
+            token = strtok(NULL, ",");
+            token = strtok(NULL, ",");
+            if (strstr(token, "ROOT") != NULL) {
+                is_root = true;
+                break;
+                }
+            }
+        }
+    fclose(users_file);
+    return is_root;
+    }
+
+bool is_user_admin(const char* username, const char* channel) {
+    char auth_path[256];
+    snprintf(auth_path, sizeof(auth_path), "%s/%s/admin/auth.csv", path, channel);
+    FILE* auth_file = fopen(auth_path, "r");
+    if (!auth_file) return false;
+
+    char line[256];
+    bool is_admin = false;
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (token && strcmp(token, username) == 0) {
+            token = strtok(NULL, ",");
+            if (strstr(token, "ADMIN") != NULL) {
+                is_admin = true;
+                break;
+                }
+            }
+        }
+    fclose(auth_file);
+    return is_admin;
+    }
+
+bool is_room_name_in_use(const char* channel, const char* room_name) {
+    char check_path[256];
+    snprintf(check_path, sizeof(check_path), "%s/%s/%s", path, channel, room_name);
+    struct stat st;
+    return stat(check_path, &st) == 0;
+    }
+
+bool does_room_exist(const char* channel, const char* room_name) {
+    char room_path[256];
+    snprintf(room_path, sizeof(room_path), "%s/%s/%s", path, channel, room_name);
+    struct stat st;
+    return stat(room_path, &st) != -1 && S_ISDIR(st.st_mode);
+    }
+
+bool rename_room(const char* channel, const char* old_room, const char* new_room) {
+    char old_path[256];
+    snprintf(old_path, sizeof(old_path), "%s/%s/%s", path, channel, old_room);
+    char new_path[256];
+    snprintf(new_path, sizeof(new_path), "%s/%s/%s", path, channel, new_room);
+    return rename(old_path, new_path) == 0;
+    }
+
+void log_room_change(const char* channel, const char* old_room, const char* new_room, const char* username) {
+    char log_message[100];
+    if (is_user_root(username)) {
+        snprintf(log_message, sizeof(log_message), "ROOT changed room %s to %s", old_room, new_room);
+        }
+    else {
+        snprintf(log_message, sizeof(log_message), "ADMIN changed room %s to %s", old_room, new_room);
+        }
+    log_activity(channel, log_message);
+    }
+
 
 void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn) {
 
