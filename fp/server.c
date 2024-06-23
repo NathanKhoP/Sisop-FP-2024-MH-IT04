@@ -714,8 +714,46 @@ int find_last_id(FILE* chat_file) {
     return last_id;
     }
 
-void see_message(const char* channel, const char* room, connection_t* conn) {
+void see_messages(const char* channel_name, const char* room, connection_t* connection) {
+    char messages_path[512];
+    sprintf(messages_path, "%s/%s/%s/messages.csv", path, channel_name, room);
 
+    FILE* messages_file = fopen(messages_path, "r");
+    if (!messages_file) {
+        char response[] = "Error opening messages.csv or no messages in room";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Failed to send response to client");
+            }
+        return;
+        }
+
+    char line[512];
+    char response[BUFFER_SIZE] = "";
+    bool has_messages = false;
+
+    while (fgets(line, sizeof(line), messages_file)) {
+        has_messages = true;
+        char* date = strtok(line, "|");
+        char* message_id = strtok(NULL, "|");
+        char* sender = strtok(NULL, "|");
+        char* message = strtok(NULL, "|");
+
+        message[strcspn(message, "\n")] = '\0';
+
+        if (date && message_id && sender && message) {
+            snprintf(response + strlen(response), sizeof(response) - strlen(response), "[%s][%s][%s] “%s” \n", date, message_id, sender, message);
+            }
+        }
+
+    if (!has_messages) {
+        snprintf(response, sizeof(response), "No messages");
+        }
+
+    if (write(connection->sock, response, strlen(response)) < 0) {
+        perror("Failed to send response to client");
+        }
+
+    fclose(messages_file);
     }
 
 void edit_message(const char* channel, const char* room, int id_chat, const char* new_text, connection_t* conn) {
