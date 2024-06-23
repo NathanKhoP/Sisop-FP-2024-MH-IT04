@@ -22,12 +22,12 @@
 #define SALT_SIZE 29
 #define BCRYPT_HASHSIZE 61
 #define BUFFER_SIZE 10240
-// #define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
-// #define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
-// #define path_channels "/home/etern1ty/sisop_works/FP/fp/DiscorIT/channels.csv"
-#define path "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT"
-#define path_user "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT/users.csv"
-#define path_channels "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT/channels.csv"
+#define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
+#define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
+#define path_channels "/home/etern1ty/sisop_works/FP/fp/DiscorIT/channels.csv"
+// #define path "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT"
+// #define path_user "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT/users.csv"
+// #define path_channels "/Users/macbook/Kuliah/Sistem Operasi/fp-sisop/fp/DiscorIT/channels.csv"
 
 #define DEBUG
 typedef struct {
@@ -66,6 +66,25 @@ void remove_user(const char* channel, const char* target, connection_t* conn);
 void ban_user(const char* channel, const char* target, connection_t* conn);
 void unban_user(const char* channel, const char* target, connection_t* conn);
 
+// LOG
+void log_activity(const char* channel, const char* message) {
+    char log_path[512];
+    sprintf(log_path, "%s/%s/admin/user.log", path, channel);
+
+    FILE* log_file = fopen(log_path, "a+");
+    if (!log_file) {
+        perror("Error opening user.log");
+        return;
+        }
+
+    time_t now = time(NULL);
+    char date[30];
+    strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    fprintf(log_file, "[%s] %s\n", date, message);
+    fclose(log_file);
+    fflush(stdout);
+    }
 
 void make_folder(char* folder_path) {
     struct stat st = { 0 };
@@ -121,7 +140,7 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t*
         return;
         }
 
-    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "SISOPGOATIT04");
+    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "SISOPGOATIT04SALTCODEREAL");
     strcpy(hashed, crypt(password, salt));
 
     fp = fopen(path_user, "a");
@@ -152,7 +171,7 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
     int file_userid;
     char file_username[MAX_LEN], file_role[MAX_LEN];
 
-    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "SISOPGOATIT04");
+    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "SISOPGOATIT04SALTCODEREAL");
     strcpy(hashed, crypt(password, salt));
 
     fp = fopen(path_user, "r");
@@ -249,7 +268,7 @@ void new_channel(const char* username, const char* channel_name, const char* key
     fseek(fp, 0, SEEK_END);
 
     char salt[MAX_LEN], hashed[MAX_LEN];
-    sprintf(salt, "$2a$10$%.22s", "SISOPGOATIT04");
+    sprintf(salt, "$2a$10$%.22s", "SISOPGOATIT04SALTCODEREAL");
     strcpy(hashed, crypt(key, salt));
 
     fprintf(fp, "%d,%s,%s\n", count + 1, channel_name, hashed);
@@ -439,7 +458,7 @@ void list_room(const char* channel, connection_t* conn) {
 
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, "admin") != 0) {
-            char dir_path[512];
+            char dir_path[1024];
             sprintf(dir_path, "%s/%s", path_room, entry->d_name);
 
             struct stat st;
@@ -456,7 +475,7 @@ void list_room(const char* channel, connection_t* conn) {
         perror("Response send failed");
         }
 
-    fclose(dir);
+    closedir(dir);
     }
 
 void list_user(const char* channel, connection_t* conn) {
@@ -677,6 +696,21 @@ void join_room(const char* channel, const char* room, connection_t* conn) {
         }
     }
 
+int find_last_id(FILE* chat_file) {
+    char line[512];
+    int last_id = 0;
+
+    while (fgets(line, sizeof(line), chat_file)) {
+        char* token = strtok(line, "|");
+        token = strtok(NULL, "|");
+        if (token) {
+            last_id = atoi(token);
+            }
+        }
+
+    return last_id;
+    }
+
 void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* conn) {
     char* start_quote = strchr(message, '\"');
     char* end_quote = strrchr(message, '\"');
@@ -721,21 +755,6 @@ void send_message(const char* username, const char* channel, const char* room, c
     if (write(conn->sock, response, strlen(response)) < 0) {
         perror("Failed to send response to client");
         }
-    }
-
-int find_last_id(FILE* chat_file) {
-    char line[512];
-    int last_id = 0;
-
-    while (fgets(line, sizeof(line), chat_file)) {
-        char* token = strtok(line, "|");
-        token = strtok(NULL, "|");
-        if (token) {
-            last_id = atoi(token);
-            }
-        }
-
-    return last_id;
     }
 
 void see_messages(const char* channel_name, const char* room, connection_t* conn) {
@@ -1022,39 +1041,6 @@ void finalize_channel_update(const char* temp_file_path, const char* old_channel
         }
     }
 
-void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn) {
-    if (!has_permission_to_edit_room(conn, channel)) {
-        send_response(conn, "You do not have permission to edit the room");
-        return;
-        }
-
-    if (is_room_name_in_use(channel, new_room)) {
-        send_response(conn, "Room name already in use");
-        return;
-        }
-
-    if (!does_room_exist(channel, old_room)) {
-        char response[100];
-        snprintf(response, sizeof(response), "Room %s does not exist in channel %s", old_room, channel);
-        send_response(conn, response);
-        return;
-        }
-
-    if (rename_room(channel, old_room, new_room)) {
-        log_room_change(channel, old_room, new_room, conn->userLogged);
-        char response[100];
-        snprintf(response, sizeof(response), "%s successfully changed to %s", old_room, new_room);
-        send_response(conn, response);
-        }
-    else {
-        send_response(conn, "Failed to change room name");
-        }
-    }
-
-bool has_permission_to_edit_room(connection_t* conn, const char* channel) {
-    return is_user_root(conn->userLogged) || is_user_admin(conn->userLogged, channel);
-    }
-
 bool is_user_root(const char* username) {
     FILE* users_file = fopen(path_user, "r");
     if (!users_file) return false;
@@ -1100,6 +1086,10 @@ bool is_user_admin(const char* username, const char* channel) {
     return is_admin;
     }
 
+bool has_permission_to_edit_room(connection_t* conn, const char* channel) {
+    return is_user_root(conn->userLogged) || is_user_admin(conn->userLogged, channel);
+    }
+
 bool is_room_name_in_use(const char* channel, const char* room_name) {
     char check_path[256];
     snprintf(check_path, sizeof(check_path), "%s/%s/%s", path, channel, room_name);
@@ -1133,13 +1123,42 @@ void log_room_change(const char* channel, const char* old_room, const char* new_
     log_activity(channel, log_message);
     }
 
+void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn) {
+    if (!has_permission_to_edit_room(conn, channel)) {
+        send_response(conn, "You do not have permission to edit the room");
+        return;
+        }
+
+    if (is_room_name_in_use(channel, new_room)) {
+        send_response(conn, "Room name already in use");
+        return;
+        }
+
+    if (!does_room_exist(channel, old_room)) {
+        char response[100];
+        snprintf(response, sizeof(response), "Room %s does not exist in channel %s", old_room, channel);
+        send_response(conn, response);
+        return;
+        }
+
+    if (rename_room(channel, old_room, new_room)) {
+        log_room_change(channel, old_room, new_room, conn->userLogged);
+        char response[100];
+        snprintf(response, sizeof(response), "%s successfully changed to %s", old_room, new_room);
+        send_response(conn, response);
+        }
+    else {
+        send_response(conn, "Failed to change room name");
+        }
+    }
+
 
 void update_user_profile(FILE* temp_file, const char* user_id, const char* user_name, const char* hash, const char* role, const char* new_value, bool is_password) {
     if (is_password) {
         char salt[SALT_SIZE];
-        snprintf(salt, sizeof(salt), "$2y$12$%.22s", "SISOPGOATIT04");
+        snprintf(salt, sizeof(salt), "$2y$12$%.22s", "SISOPGOATIT04SALTCODEREAL");
         char new_hash[BCRYPT_HASHSIZE];
-        bcrypt_hashpw(new_value, salt, new_hash);
+        crypt(new_hash, (new_value, salt));
         fprintf(temp_file, "%s,%s,%s,%s\n", user_id, user_name, new_hash, role);
         }
     else {
@@ -1387,26 +1406,6 @@ void exit_func(connection_t* conn) {
 
 // ROOT
 
-// LOG
-void log_activity(const char* channel, const char* message) {
-    char log_path[512];
-    sprintf(log_path, "%s/%s/admin/user.log", path, channel);
-
-    FILE* log_file = fopen(log_path, "a+");
-    if (!log_file) {
-        perror("Error opening user.log");
-        return;
-        }
-
-    time_t now = time(NULL);
-    char date[30];
-    strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-    fprintf(log_file, "[%s] %s\n", date, message);
-    fclose(log_file);
-    fflush(stdout);
-    }
-
 // ====================================================================================================
 // ====================================================================================================
 // TODO: Implement the functions above
@@ -1581,26 +1580,26 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
         }
 
-    // Making the program run as a daemon (Modul)
-    pid_t pid, sid;
-    pid = fork();
-    if (pid < 0) {
-        printf("Fork Failed!\n");
-        exit(EXIT_FAILURE);
-        }
-    if (pid > 0) {
-        exit(EXIT_SUCCESS);
-        }
-    umask(0);
-    if (setsid() < 0) {
-        perror("Error: setsid() failed");
-        }
-    if ((chdir("/")) < 0) {
-        exit(EXIT_FAILURE);
-        }
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+    // // Making the program run as a daemon (Modul)
+    // pid_t pid, sid;
+    // pid = fork();
+    // if (pid < 0) {
+    //     printf("Fork Failed!\n");
+    //     exit(EXIT_FAILURE);
+    //     }
+    // if (pid > 0) {
+    //     exit(EXIT_SUCCESS);
+    //     }
+    // umask(0);
+    // if (setsid() < 0) {
+    //     perror("Error: setsid() failed");
+    //     }
+    // if ((chdir("/")) < 0) {
+    //     exit(EXIT_FAILURE);
+    //     }
+    // close(STDIN_FILENO);
+    // close(STDOUT_FILENO);
+    // close(STDERR_FILENO);
 
     while (1) {
         // accept incoming connection
