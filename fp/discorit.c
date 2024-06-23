@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
         printf("Invalid command\n");
         return 1;
     }
-
+    cmd_func(cmd, usr, channel, room);
     close(sock);
     return 0;
 }
