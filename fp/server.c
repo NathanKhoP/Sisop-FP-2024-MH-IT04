@@ -65,6 +65,21 @@ void log_room_change(const char* channel, const char* old_room, const char* new_
 void remove_user(const char* channel, const char* target, connection_t* conn);
 void ban_user(const char* channel, const char* target, connection_t* conn);
 void unban_user(const char* channel, const char* target, connection_t* conn);
+void remove_root(const char* target, connection_t* conn);
+void list_user_root(connection_t* conn);
+void new_channel(const char* username, const char* channel_name, const char* key, connection_t* conn);
+void new_room(const char* username, const char* channel_name, const char* room, connection_t* conn);
+void list_channel(connection_t* conn);
+void list_room(const char* channel, connection_t* conn);
+void list_user(const char* channel, connection_t* conn);
+void join_channel(const char* username, const char* channel, connection_t* conn);
+void join_room(const char* channel, const char* room, connection_t* conn);
+void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* conn);
+void see_messages(const char* channel_name, const char* room, connection_t* conn);
+void exit_func(connection_t* conn);
+
+
+
 
 void sendErrorResponse(connection_t* conn, const char* errorMsg) {
     if (write(conn->sock, errorMsg, strlen(errorMsg)) < 0) {
@@ -201,16 +216,16 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
         char resp[] = "Error opening file\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
-        }
+            }
         fsync(conn->sock);
         return;
-    }
+        }
 
     while ((read = getline(&line, &len, fp)) != -1) {
         char* token = strtok(line, ",");
         token = strtok(NULL, ",");
         if (strcmp(token, username) != 0) continue;
-        
+
         isExist = true;
         token = strtok(NULL, ",");
         strcpy(file_hashed, token);
@@ -220,8 +235,8 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
             token = strtok(NULL, ",");
             strcpy(conn->roleLogged, token);
             break;
+            }
         }
-    }
 
     fclose(fp);
     if (line) free(line);
@@ -232,12 +247,12 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
     else {
         sprintf(resp, "%s logged in", username);
         printf("%s\n", resp);
-    }
+        }
     if (write(conn->sock, resp, strlen(resp)) < 0) {
         perror("Response send failed");
-    }
+        }
     fsync(conn->sock);
-}
+    }
 
 // ====================================================================================================
 // ====================================================================================================
@@ -380,7 +395,7 @@ void new_room(const char* username, const char* channel_name, const char* room, 
 
     fclose(auth);
 
-    if (!isAdmin &&!isRoot) {
+    if (!isAdmin && !isRoot) {
         char resp[] = "You are not an admin, you can't make a room on this channel\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
@@ -1240,200 +1255,408 @@ void edit_profile(const char* username, const char* new_value, bool is_password,
     }
 
 void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn) {
-        char chat_path[256];
-        sprintf(chat_path, "%s/%s/%s/chat.csv", path, channel, room);
-        FILE* chat_file = fopen(chat_path, "r");
-        if (!chat_file) {
-            send_response(conn, "Error opening chat.csv");
-            return;
+    char chat_path[256];
+    sprintf(chat_path, "%s/%s/%s/chat.csv", path, channel, room);
+    FILE* chat_file = fopen(chat_path, "r");
+    if (!chat_file) {
+        send_response(conn, "Error opening chat.csv");
+        return;
         }
 
-        char temp_path[256];
-        sprintf(temp_path, "%s/%s/%s/chat_temp.csv", path, channel, room);
-        FILE* temp_file = fopen(temp_path, "w");
-        if (!temp_file) {
-            send_response(conn, "Error creating temporary file for editing chat");
-            fclose(chat_file);
-            return;
-        }
-
-        bool found = process_chat_file(chat_file, temp_file, chat_id, "");
-
+    char temp_path[256];
+    sprintf(temp_path, "%s/%s/%s/chat_temp.csv", path, channel, room);
+    FILE* temp_file = fopen(temp_path, "w");
+    if (!temp_file) {
+        send_response(conn, "Error creating temporary file for editing chat");
         fclose(chat_file);
-        fclose(temp_file);
+        return;
+        }
 
-        finalize_modification(chat_path, temp_path, found, chat_id, conn);
+    bool found = process_chat_file(chat_file, temp_file, chat_id, "");
+
+    fclose(chat_file);
+    fclose(temp_file);
+
+    finalize_modification(chat_path, temp_path, found, chat_id, conn);
     }
 
 void remove_channel(const char* channel, connection_t* conn) {
-        FILE *users_file = fopen(path_user, "r");
-        if(!users_file) {
-            send_response(conn, "Error opening users.csv");
-            return;
+    FILE* users_file = fopen(path_user, "r");
+    if (!users_file) {
+        send_response(conn, "Error opening users.csv");
+        return;
         }
 
-        char line[256];
-        bool is_root_user = check_if_root_user(users_file, conn->userLogged);
-        bool is_admin_user = check_if_admin_user(users_file, conn->userLogged);
-        fclose(users_file);
+    char line[256];
+    bool is_root_user = check_if_root_user(users_file, conn->userLogged);
+    bool is_admin_user = check_if_admin_user(users_file, conn->userLogged);
+    fclose(users_file);
 
-        if (!is_root_user && !is_admin_user) {
-            send_response(conn, "You do not have permission to remove the channel");
-            return;
+    if (!is_root_user && !is_admin_user) {
+        send_response(conn, "You do not have permission to remove the channel");
+        return;
         }
 
-        char path_channel[256];
-        sprintf(path_channel, "%s/%s", path, channel);
-        struct stat st;
-        if (stat(path_channel, &st) == -1 || !S_ISDIR(st.st_mode)) {
-            send_response(conn, "Channel does not exist");
-            return;
+    char path_channel[256];
+    sprintf(path_channel, "%s/%s", path, channel);
+    struct stat st;
+    if (stat(path_channel, &st) == -1 || !S_ISDIR(st.st_mode)) {
+        send_response(conn, "Channel does not exist");
+        return;
         }
 
-        delete_folder(path_channel);
+    delete_folder(path_channel);
 
-        FILE *channels_file = fopen(path_channels, "r");
-        if (!channels_file) {
-            send_response(conn, "Error opening channels.csv");
-            return;
+    FILE* channels_file = fopen(path_channels, "r");
+    if (!channels_file) {
+        send_response(conn, "Error opening channels.csv");
+        return;
         }
 
-        char temp_file_path[256];
-        sprintf(temp_file_path, "%s/channels_temp.csv", path);
-        FILE *tfile = fopen(temp_file_path, "w+");
-        if (!tfile) {
-            send_response(conn, "Error creating temporary file for editing channel");
-            fclose(channels_file);
-            return;
+    char temp_file_path[256];
+    sprintf(temp_file_path, "%s/channels_temp.csv", path);
+    FILE* tfile = fopen(temp_file_path, "w+");
+    if (!tfile) {
+        send_response(conn, "Error creating temporary file for editing channel");
+        fclose(channels_file);
+        return;
         }
 
-        while (fgets(line, sizeof(line), channels_file)) {
-            char *token = strtok(line, ",");
-            token = strtok(NULL, ",");
-            if (token && strcmp(token, channel) != 0) {
-                fprintf(tfile, "%s", line);
+    while (fgets(line, sizeof(line), channels_file)) {
+        char* token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (token && strcmp(token, channel) != 0) {
+            fprintf(tfile, "%s", line);
             }
         }
 
-        fclose(channels_file);
-        fclose(tfile);
+    fclose(channels_file);
+    fclose(tfile);
 
-        remove(path_channels);
-        rename(temp_file_path, path_channels);
+    remove(path_channels);
+    rename(temp_file_path, path_channels);
 
-        char resp[100];
-        sprintf(resp, "Channel %s removed", channel);
-        send_response(conn, resp);
-        
+    char resp[100];
+    sprintf(resp, "Channel %s removed", channel);
+    send_response(conn, resp);
+
     }
 
 void remove_room(const char* channel, const char* room, connection_t* conn) {
-        bool has_permission = has_permission_to_edit_room(conn, channel);
-        if (!has_permission) {
-            send_response(conn, "You do not have permission to remove the room");
-            return;
+    bool has_permission = has_permission_to_edit_room(conn, channel);
+    if (!has_permission) {
+        send_response(conn, "You do not have permission to remove the room");
+        return;
         }
 
-        char room_path[256];
-        sprintf(room_path, "%s/%s/%s", path, channel, room);
-        struct stat st;
-        if (stat(room_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
-            send_response(conn, "Room does not exist");
-            return;
+    char room_path[256];
+    sprintf(room_path, "%s/%s/%s", path, channel, room);
+    struct stat st;
+    if (stat(room_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
+        send_response(conn, "Room does not exist");
+        return;
         }
 
-        delete_folder(room_path);
+    delete_folder(room_path);
 
-        char resp[100];
-        sprintf(resp, "Room %s removed", room);
-        send_response(conn, resp);
+    char resp[100];
+    sprintf(resp, "Room %s removed", room);
+    send_response(conn, resp);
     }
 
 void remove_all_room(const char* channel, connection_t* conn) {
-        bool has_permission = has_permission_to_edit_room(conn, channel);
-        if (!has_permission) {
-            send_response(conn, "You do not have permission to remove all rooms");
-            return;
+    bool has_permission = has_permission_to_edit_room(conn, channel);
+    if (!has_permission) {
+        send_response(conn, "You do not have permission to remove all rooms");
+        return;
         }
 
-        char channel_path[256];
-        sprintf(channel_path, "%s/%s", path, channel);
-        DIR *channel_dir = opendir(channel_path);
-        struct stat st;
-        if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
-            send_response(conn, "Channel does not exist");
-            return;
+    char channel_path[256];
+    sprintf(channel_path, "%s/%s", path, channel);
+    DIR* channel_dir = opendir(channel_path);
+    struct stat st;
+    if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
+        send_response(conn, "Channel does not exist");
+        return;
         }
 
-        struct dirent *entry;
-        while ((entry = readdir(channel_dir)) != NULL) {
-            if (strcmp(entry->d_name, "ADMIN") != 0 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-                char room_path[256];
-                sprintf(room_path, "%s/%s", channel_path, entry->d_name);
-                
-                delete_folder(room_path);
+    struct dirent* entry;
+    while ((entry = readdir(channel_dir)) != NULL) {
+        if (strcmp(entry->d_name, "ADMIN") != 0 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            char room_path[256];
+            sprintf(room_path, "%s/%s", channel_path, entry->d_name);
+
+            delete_folder(room_path);
             }
         }
 
-        char resp[100];
-        sprintf(resp, "All rooms in channel %s removed", channel);
-        send_response(conn, resp);
+    char resp[100];
+    sprintf(resp, "All rooms in channel %s removed", channel);
+    send_response(conn, resp);
     }
 
 void remove_user(const char* channel, const char* target, connection_t* conn) {
-        char auth_path[256];
-        sprintf(auth_path, "%s/%s/admin/auth.csv", path, channel);
-        FILE *auth_file = fopen(auth_path, "r");
-        if (!auth_file) {
-            send_response(conn, "Error opening auth.csv");
-            return;
+    char auth_path[256];
+    sprintf(auth_path, "%s/%s/admin/auth.csv", path, channel);
+    FILE* auth_file = fopen(auth_path, "r");
+    if (!auth_file) {
+        send_response(conn, "Error opening auth.csv");
+        return;
         }
 
-        char temp_file_path[256];
-        sprintf(temp_file_path, "%s/auth_temp.csv", path);
-        FILE *temp_file = fopen(temp_file_path, "w");
-        if (!temp_file) {
-            send_response(conn, "Error creating temporary file for editing auth");
-            fclose(auth_file);
-            return;
-        }
-
-        bool found = false;
-        char line[256];
-        while (fgets(line, sizeof(line), auth_file)) {
-            char *token = strtok(line, ",");
-            if (token == NULL) continue;
-            token = strtok(NULL, ",");
-            if (token == NULL) continue;
-            if (strcmp(token, target) == 0) {
-                found = true;
-                continue;
-            }
-            fprintf(temp_file, "%s", line);
-        }
-
+    char temp_file_path[256];
+    sprintf(temp_file_path, "%s/auth_temp.csv", path);
+    FILE* temp_file = fopen(temp_file_path, "w");
+    if (!temp_file) {
+        send_response(conn, "Error creating temporary file for editing auth");
         fclose(auth_file);
-        fclose(temp_file);
+        return;
+        }
 
-        if (found) {
-            remove(auth_path);
-            rename(temp_file_path, auth_path);
-            char resp[100];
-            sprintf(resp, "User %s removed from channel %s", target, channel);
-            send_response(conn, resp);
-        } else {
-            remove(temp_file_path);
-            send_response(conn, "User not found in channel");
+    bool found = false;
+    char line[256];
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+        if (strcmp(token, target) == 0) {
+            found = true;
+            continue;
+            }
+        fprintf(temp_file, "%s", line);
+        }
+
+    fclose(auth_file);
+    fclose(temp_file);
+
+    if (found) {
+        remove(auth_path);
+        rename(temp_file_path, auth_path);
+        char resp[100];
+        sprintf(resp, "User %s removed from channel %s", target, channel);
+        send_response(conn, resp);
+        }
+    else {
+        remove(temp_file_path);
+        send_response(conn, "User not found in channel");
         }
 
     }
 
-void ban_user(const char* channel, const char* target, connection_t* conn) {
+// Helper function to check if a user has admin or root privileges
+bool check_user_privileges(const char* user, const char* channel, bool* is_admin, bool* is_root) {
+    char auth_file_path[256];
+    snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", path, channel);
+    FILE* auth_file = fopen(auth_file_path, "r");
+    if (!auth_file) {
+        return false;
+        }
 
+    char line[256];
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+        if (strcmp(token, user) == 0) {
+            token = strtok(NULL, ",");
+            if (strstr(token, "ROOT") != NULL) {
+                *is_root = true;
+                }
+            else if (strstr(token, "ADMIN") != NULL) {
+                *is_admin = true;
+                }
+            break;
+            }
+        }
+
+    fclose(auth_file);
+    return true;
     }
 
-void unban_user(const char* channel, const char* target, connection_t* conn) {
+// Helper function to update the auth file with the banned user
+bool update_auth_file(const char* channel, const char* target, char* error_message) {
+    char auth_file_path[256];
+    snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", path, channel);
+    FILE* auth_file = fopen(auth_file_path, "r");
+    if (!auth_file) {
+        strcpy(error_message, "Gagal membuka file auth.csv");
+        return false;
+        }
 
+    char temp_file_path[256];
+    snprintf(temp_file_path, sizeof(temp_file_path), "%s/%s/admin/auth_temp.csv", path, channel);
+    FILE* temp_file = fopen(temp_file_path, "w+");
+    if (!temp_file) {
+        strcpy(error_message, "Gagal membuat file sementara");
+        fclose(auth_file);
+        return false;
+        }
+
+    bool user_found = false;
+    bool can_ban = true;
+    char line[256];
+
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* user_id = strtok(line, ",");
+        char* user_name = strtok(NULL, ",");
+        char* role = strtok(NULL, ",");
+
+        if (user_name && strcmp(user_name, target) == 0) {
+            user_found = true;
+            if (strstr(role, "ROOT") != NULL || strstr(role, "ADMIN") != NULL) {
+                can_ban = false;
+                }
+            else {
+                fprintf(temp_file, "%s,%s,BANNED\n", user_id, user_name);
+                continue;
+                }
+            }
+        fprintf(temp_file, "%s,%s,%s", user_id, user_name, role);
+        }
+
+    fclose(auth_file);
+    fclose(temp_file);
+
+    if (!user_found) {
+        remove(temp_file_path);
+        strcpy(error_message, "User tidak ditemukan di channel ini");
+        return false;
+        }
+
+    if (!can_ban) {
+        remove(temp_file_path);
+        strcpy(error_message, "Anda tidak bisa melakukan ban pada ROOT atau ADMIN");
+        return false;
+        }
+
+    remove(auth_file_path);
+    rename(temp_file_path, auth_file_path);
+    return true;
+    }
+
+// Main function to ban a user
+void ban_user(const char* channel, const char* target, connection_t* conn) {
+    bool is_admin = false;
+    bool is_root = false;
+
+    if (!check_user_privileges(conn->userLogged, channel, &is_admin, &is_root)) {
+        sendErrorResponse(conn, "Gagal membuka file auth.csv");
+        return;
+        }
+
+    if (!is_admin && !is_root) {
+        sendErrorResponse(conn, "Anda tidak memiliki izin untuk melakukan ban user");
+        return;
+        }
+
+    char error_message[100];
+    if (!update_auth_file(channel, target, error_message)) {
+        sendErrorResponse(conn, error_message);
+        return;
+        }
+
+    char response[100];
+    snprintf(response, sizeof(response), "%s diban", target);
+    if (write(conn->sock, response, strlen(response)) < 0) {
+        perror("Gagal mengirim respons ke client");
+        }
+
+    char log_message[100];
+    snprintf(log_message, sizeof(log_message), "%s ban %s", is_root ? "ROOT" : "ADMIN", target);
+    log_activity(channel, log_message);
+    }
+
+
+// Helper function to update the auth file with the unbanned user
+bool update_auth_file_with_unban(const char* channel, const char* target, char* error_message) {
+    char auth_file_path[256];
+    snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", path, channel);
+    FILE* auth_file = fopen(auth_file_path, "r");
+    if (!auth_file) {
+        strcpy(error_message, "Gagal membuka file auth.csv");
+        return false;
+        }
+
+    char temp_file_path[256];
+    snprintf(temp_file_path, sizeof(temp_file_path), "%s/%s/admin/auth_temp.csv", path, channel);
+    FILE* temp_file = fopen(temp_file_path, "w+");
+    if (!temp_file) {
+        strcpy(error_message, "Gagal membuat file sementara");
+        fclose(auth_file);
+        return false;
+        }
+
+    bool user_found = false;
+    char line[256];
+
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* user_id = strtok(line, ",");
+        char* user_name = strtok(NULL, ",");
+        char* role = strtok(NULL, ",");
+
+        if (user_name && strcmp(user_name, target) == 0) {
+            user_found = true;
+            if (strstr(role, "BANNED") == NULL) {
+                strcpy(error_message, "User tidak dalam status banned");
+                fclose(auth_file);
+                fclose(temp_file);
+                remove(temp_file_path);
+                return false;
+                }
+            else {
+                fprintf(temp_file, "%s,%s,USER\n", user_id, user_name);
+                continue;
+                }
+            }
+        fprintf(temp_file, "%s,%s,%s", user_id, user_name, role);
+        }
+
+    fclose(auth_file);
+    fclose(temp_file);
+
+    if (!user_found) {
+        remove(temp_file_path);
+        strcpy(error_message, "User tidak ditemukan di channel ini");
+        return false;
+        }
+
+    remove(auth_file_path);
+    rename(temp_file_path, auth_file_path);
+    return true;
+    }
+
+// Main function to unban a user
+void unban_user(const char* channel, const char* target, connection_t* conn) {
+    bool is_admin = false;
+    bool is_root = false;
+
+    if (!check_user_privileges(conn->userLogged, channel, &is_admin, &is_root)) {
+        sendErrorResponse(conn, "Gagal membuka file auth.csv");
+        return;
+        }
+
+    if (!is_admin && !is_root) {
+        sendErrorResponse(conn, "Anda tidak memiliki izin untuk melakukan unban user");
+        return;
+        }
+
+    char error_message[100];
+    if (!update_auth_file_with_unban(channel, target, error_message)) {
+        sendErrorResponse(conn, error_message);
+        return;
+        }
+
+    char response[100];
+    snprintf(response, sizeof(response), "%s kembali", target);
+    if (write(conn->sock, response, strlen(response)) < 0) {
+        perror("Gagal mengirim respons ke client");
+        }
+
+    char log_message[100];
+    snprintf(log_message, sizeof(log_message), "%s unban %s", is_root ? "ROOT" : "ADMIN", target);
+    log_activity(channel, log_message);
     }
 
 // ROOT
@@ -1445,7 +1668,7 @@ void list_user_root(connection_t* conn) {
             perror("Response send failed");
             }
         return;
-        }   
+        }
 
     char line[MAX_LEN];
     char resp[MAX_LEN] = "";
@@ -1466,12 +1689,89 @@ void list_user_root(connection_t* conn) {
     fclose(fp);
     }
 
-void edit_user(const char* target, const char* new_value, bool is_password, connection_t* conn) {
+void remove_user_entry(const char* username, const char* temp_file_path, connection_t* conn) {
+    FILE* user_file = fopen(path_user, "r");
+    if (!user_file) {
+        sendErrorResponse(conn, "Gagal membuka file users.csv");
+        return;
+        }
 
+    FILE* temp_file = fopen(temp_file_path, "w+");
+    if (!temp_file) {
+        sendErrorResponse(conn, "Gagal membuat file sementara");
+        fclose(user_file);
+        return;
+        }
+
+    char buffer[256];
+    bool user_found = false;
+
+    while (fgets(buffer, sizeof(buffer), user_file)) {
+        char* id = strtok(buffer, ",");
+        char* name = strtok(NULL, ",");
+        char* password_hash = strtok(NULL, ",");
+        char* user_role = strtok(NULL, ",");
+
+        if (name && strcmp(name, username) == 0) {
+            user_found = true;
+            continue;  // Skip writing this user to temp file
+            }
+        fprintf(temp_file, "%s,%s,%s,%s", id, name, password_hash, user_role);
+        }
+
+    fclose(user_file);
+    fclose(temp_file);
+
+    if (user_found) {
+        remove(path_user);
+        rename(temp_file_path, path_user);
+        char success_msg[100];
+        snprintf(success_msg, sizeof(success_msg), "%s berhasil dihapus", username);
+        if (write(conn->sock, success_msg, strlen(success_msg)) < 0) {
+            perror("Gagal mengirim respons ke client");
+            }
+        }
+    else {
+        remove(temp_file_path);
+        sendErrorResponse(conn, "User tidak ditemukan");
+        }
     }
 
-void remove_root(const char* target, connection_t* conn) {
+bool is_logged_user_root(const char* logged_user) {
+    FILE* user_file = fopen(path_user, "r");
+    if (!user_file) {
+        return false;
+        }
 
+    char buffer[256];
+    bool is_root = false;
+
+    while (fgets(buffer, sizeof(buffer), user_file)) {
+        char* id = strtok(buffer, ",");
+        char* name = strtok(NULL, ",");
+        if (name && strcmp(name, logged_user) == 0) {
+            char* password_hash = strtok(NULL, ",");
+            char* user_role = strtok(NULL, ",");
+            if (strstr(user_role, "ROOT") != NULL) {
+                is_root = true;
+                break;
+                }
+            }
+        }
+
+    fclose(user_file);
+    return is_root;
+    }
+
+void remove_root(const char* target_user, connection_t* conn) {
+    if (!is_logged_user_root(conn->userLogged)) {
+        sendErrorResponse(conn, "Anda tidak memiliki izin untuk menghapus user secara permanen");
+        return;
+        }
+
+    char temp_file_path[256];
+    snprintf(temp_file_path, sizeof(temp_file_path), "%s/users_temp.csv", path);
+    remove_user_entry(target_user, temp_file_path, conn);
     }
 
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn) {
@@ -1713,7 +2013,7 @@ void* discorit_handler(void* input) {
                     continue;
                     }
                 edit_message(conn->channelLogged, conn->roomLogged, atoi(message_id), token, conn);
-            }
+                }
             else if (strcmp(token, "CHANNEL") == 0) {
                 token = strtok(NULL, " ");
                 if (token == NULL) {
@@ -1721,7 +2021,7 @@ void* discorit_handler(void* input) {
                     continue;
                     }
                 edit_channel(conn->channelLogged, token, conn);
-                }   
+                }
             else if (strcmp(token, "ROOM") == 0) {
                 token = strtok(NULL, " ");
                 char* old_room = token;
@@ -1780,22 +2080,22 @@ void* discorit_handler(void* input) {
                     }
                 }
             }
-        // else if (strcmp(token, "BAN") == 0) {
-        //     token = strtok(NULL, " ");
-        //     if (token == NULL) {
-        //         sendErrorResponse(conn, "Invalid command\n");
-        //         continue;
-        //         }
-        //     ban_user(conn->channelLogged, token, conn);
-        //     }
-        // else if (strcmp(token, "UNBAN") == 0) {
-        //     token = strtok(NULL, " ");
-        //     if (token == NULL) {
-        //         sendErrorResponse(conn, "Invalid command\n");
-        //         continue;
-        //         }
-        //     unban_user(conn->channelLogged, token, conn);
-        //     }
+        else if (strcmp(token, "BAN") == 0) {
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            ban_user(conn->channelLogged, token, conn);
+            }
+        else if (strcmp(token, "UNBAN") == 0) {
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            unban_user(conn->channelLogged, token, conn);
+            }
         else if (strcmp(token, "REMOVE") == 0) {
             token = strtok(NULL, " ");
             if (token == NULL) {
@@ -1811,9 +2111,14 @@ void* discorit_handler(void* input) {
                 remove_user(conn->channelLogged, token, conn);
                 }
             }
-            // else {
-            //     remove_root(token, conn);
-            //     }
+        else if (strcmp(token, "ROOT") == 0) {
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            remove_root(token, conn);
+            }
         else if (strcmp(token, "EXIT") == 0) {
             exit_func(conn);
             }
