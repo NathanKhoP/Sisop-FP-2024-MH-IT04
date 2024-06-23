@@ -1424,7 +1424,7 @@ void remove_user(const char* channel, const char* target, connection_t* conn) {
             remove(temp_file_path);
             send_response(conn, "User not found in channel");
         }
-        
+
     }
 
 void ban_user(const char* channel, const char* target, connection_t* conn) {
@@ -1444,7 +1444,7 @@ void list_user_root(connection_t* conn) {
             perror("Response send failed");
             }
         return;
-        }
+        }   
 
     char line[MAX_LEN];
     char resp[MAX_LEN] = "";
@@ -1693,24 +1693,122 @@ void* discorit_handler(void* input) {
                     }
                 }
             }
+        else if (strcmp(token, "EDIT") == 0) {
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            if (strcmp(token, "CHAT") == 0) {
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                char* message_id = token;
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                edit_message(conn->channelLogged, conn->roomLogged, atoi(message_id), token, conn);
+            }
+            else if (strcmp(token, "CHANNEL") == 0) {
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                edit_channel(conn->channelLogged, token, conn);
+                }   
+            else if (strcmp(token, "ROOM") == 0) {
+                token = strtok(NULL, " ");
+                char* old_room = token;
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                edit_room(conn->channelLogged, old_room, token, conn);
+                }
+            // else if (strcmp(token, "PROFILE") == 0) {
+            //     token = strtok(NULL, " ");
+            //     if (token == NULL) {
+            //         sendErrorResponse(conn, "Invalid command\n");
+            //         continue;
+            //         }
+            //     edit_profile(conn->userLogged, token, conn);
+            //     }
+            else {
+                sendErrorResponse(conn, "Invalid command\n");
+                }
+            }
         else if (strcmp(token, "DEL") == 0) {
-
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            if (strcmp(token, "CHAT") == 0) {
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                remove_message(conn->channelLogged, conn->roomLogged, atoi(token), conn);
+                }
+            else if (strcmp(token, "CHANNEL") == 0) {
+                char* channel = strtok(NULL, " ");
+                if (channel == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                remove_channel(channel, conn);
+                }
+            else if (strcmp(token, "ROOM") == 0) {
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                if (strcmp(token, "ALL") == 0) {
+                    remove_all_room(conn->channelLogged, conn);
+                    }
+                else {
+                    remove_room(conn->channelLogged, token, conn);
+                    }
+                }
             }
-        else if (strcmp(token, "BAN") == 0) {
+        // else if (strcmp(token, "BAN") == 0) {
 
-            }
-        else if (strcmp(token, "UNBAN") == 0) {
+        //     }
+        // else if (strcmp(token, "UNBAN") == 0) {
 
-            }
+        //     }
         else if (strcmp(token, "REMOVE") == 0) {
-
+            token = strtok(NULL, " ");
+            if (token == NULL) {
+                sendErrorResponse(conn, "Invalid command\n");
+                continue;
+                }
+            if (strcmp(token, "USER") == 0) {
+                token = strtok(NULL, " ");
+                if (token == NULL) {
+                    sendErrorResponse(conn, "Invalid command\n");
+                    continue;
+                    }
+                remove_user(conn->channelLogged, token, conn);
+                }
             }
+            // else {
+            //     remove_root(token, conn);
+            //     }
         else if (strcmp(token, "EXIT") == 0) {
-
+            exit_func(conn);
             }
         else {
-            printf("Invalid command\n");
-            break;
+            resp = "Invalid command\n";
+            send_response(conn, resp);
             }
         }
 
