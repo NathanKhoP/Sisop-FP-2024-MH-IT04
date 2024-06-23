@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <crypt.h>
 
 #define PORT 8080
 #define MAX_LEN 1024
@@ -1012,6 +1013,8 @@ void* discorit_handler(void* input) {
         // ====================================================================================================
         // CONTINUE
         // ====================================================================================================
+
+
 
         else {
             printf("Invalid command\n");
