@@ -37,6 +37,9 @@ typedef struct {
     char roomLogged[MAX_USER];
     } connection_t;
 
+void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn);
+
+
 void make_folder(char* folder_path) {
     struct stat st = { 0 };
     if (stat(folder_path, &st) == -1) mkdir(folder_path, 0777);
@@ -562,6 +565,91 @@ void remove_root(const char* target, connection_t* conn) {
 
     }
 
+void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn) {
+    FILE* channelsFile = fopen(path_channels, "r");
+    if (!channelsFile) {
+        sendErrorResponse(conn, "Error opening channels.csv\n");
+        return;
+        }
+
+    char line[MAX_LEN];
+    char storedHash[MAX_LEN];
+    bool keyValid = false;
+
+    while (fgets(line, sizeof(line), channelsFile)) {
+        char* token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (token && strcmp(token, channel) == 0) {
+            token = strtok(NULL, ",");
+            strcpy(storedHash, token);
+            storedHash[strcspn(storedHash, "\n")] = 0;
+            if (token && !strcmp(crypt(key, storedHash), storedHash)) {
+                keyValid = true;
+                break;
+                }
+            }
+        }
+
+    fclose(channelsFile);
+
+    if (keyValid) {
+        FILE* usersFile = fopen(path_user, "r");
+        if (!usersFile) {
+            sendErrorResponse(conn, "Error opening users.csv\n");
+            return;
+            }
+
+        char userLine[MAX_LEN];
+        char userId[10];
+        bool userFound = false;
+
+        while (fgets(userLine, sizeof(userLine), usersFile)) {
+            char* token = strtok(userLine, ",");
+            strcpy(userId, token);
+            token = strtok(NULL, ",");
+            if (token && strcmp(token, user) == 0) {
+                userFound = true;
+                break;
+                }
+            }
+
+        fclose(usersFile);
+
+        if (userFound) {
+            char authPath[256];
+            snprintf(authPath, sizeof(authPath), "%s/%s/admin/auth.csv", path, channel);
+            FILE* authFile = fopen(authPath, "a");
+            if (authFile) {
+                fprintf(authFile, "%s,%s,USER\n", userId, user);
+                fclose(authFile);
+
+                snprintf(conn->userLogged, sizeof(conn->userLogged), "%s", user);
+                char response[BUFFER_SIZE];
+                snprintf(response, sizeof(response), "[%s/%s]", user, channel);
+                if (write(conn->sock, response, strlen(response)) < 0) {
+                    perror("Response send failed");
+                    }
+                }
+            else {
+                sendErrorResponse(conn, "Error opening auth.csv\n");
+                }
+            }
+        else {
+            sendErrorResponse(conn, "User tidak ditemukan\n");
+            }
+        }
+    else {
+        sendErrorResponse(conn, "Key salah\n");
+        }
+
+
+    }
+
+void sendErrorResponse(connection_t* conn, const char* errorMsg) {
+    if (write(conn->sock, errorMsg, strlen(errorMsg)) < 0) {
+        perror("Response send failed");
+        }
+    }
 
 void exit_func(connection_t* conn) {
     if (strlen(conn->roomLogged) > 0) {
