@@ -1190,7 +1190,7 @@ void update_user_profile(FILE* temp_file, const char* user_id, const char* user_
 void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn) {
     FILE* file = fopen(path_user, "r+");
     if (!file) {
-        send_response(conn, "Gagal membuka file users.csv");
+        send_response(conn, "Failed to open users.csv");
         return;
         }
 
@@ -1198,7 +1198,7 @@ void edit_profile(const char* username, const char* new_value, bool is_password,
     snprintf(temp_path, sizeof(temp_path), "%s/users_temp.csv", path);
     FILE* temp_file = fopen(temp_path, "w");
     if (!temp_file) {
-        send_response(conn, "Gagal membuat file sementara");
+        send_response(conn, "Failed to create temporary file");
         fclose(file);
         return;
         }
@@ -1231,7 +1231,7 @@ void edit_profile(const char* username, const char* new_value, bool is_password,
 
     if (name_exists) {
         remove(temp_path);
-        send_response(conn, "Username sudah digunakan");
+        send_response(conn, "Username already exists");
         return;
         }
 
@@ -1239,12 +1239,12 @@ void edit_profile(const char* username, const char* new_value, bool is_password,
         remove(path_user);
         rename(temp_path, path_user);
         char response[100];
-        snprintf(response, sizeof(response), is_password ? "Password diupdate" : "Profil diupdate");
+        snprintf(response, sizeof(response), is_password ? "Password updated" : "Profile updated");
         send_response(conn, response);
         }
     else {
         remove(temp_path);
-        send_response(conn, "User tidak ditemukan");
+        send_response(conn, "User not found");
         }
     }
 
