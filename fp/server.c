@@ -592,6 +592,26 @@ void exit_func(connection_t* conn) {
 
 // ROOT
 
+// LOG
+void log_activity(const char* channel, const char* message) {
+    char log_path[512];
+    sprintf(log_path, "%s/%s/admin/user.log", path, channel);
+
+    FILE* log_file = fopen(log_path, "a+");
+    if (!log_file) {
+        perror("Error opening user.log");
+        return;
+        }
+
+    time_t now = time(NULL);
+    char date[30];
+    strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    fprintf(log_file, "[%s] %s\n", date, message);
+    fclose(log_file);
+    fflush(stdout);
+    }
+
 // ====================================================================================================
 // ====================================================================================================
 // TODO: Implement the functions above
