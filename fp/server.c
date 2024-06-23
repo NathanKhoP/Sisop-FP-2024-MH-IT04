@@ -1290,7 +1290,7 @@ void remove_channel(const char* channel, connection_t* conn) {
             return;
         }
 
-        deele_folder(path_channel);
+        delete_folder(path_channel);
 
         FILE *channels_file = fopen(path_channels, "r");
         if (!channels_file) {
@@ -1358,6 +1358,7 @@ void remove_all_room(const char* channel, connection_t* conn) {
 
         char channel_path[256];
         sprintf(channel_path, "%s/%s", path, channel);
+        DIR *channel_dir = opendir(channel_path);
         struct stat st;
         if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
             send_response(conn, "Channel does not exist");
@@ -1365,7 +1366,7 @@ void remove_all_room(const char* channel, connection_t* conn) {
         }
 
         struct dirent *entry;
-        while ((entry = readdir(channel_path)) != NULL) {
+        while ((entry = readdir(channel_dir)) != NULL) {
             if (strcmp(entry->d_name, "ADMIN") != 0 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
                 char room_path[256];
                 sprintf(room_path, "%s/%s", channel_path, entry->d_name);
@@ -1862,26 +1863,26 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
         }
 
-    // Making the program run as a daemon (Modul)
-    pid_t pid, sid;
-    pid = fork();
-    if (pid < 0) {
-        printf("Fork Failed!\n");
-        exit(EXIT_FAILURE);
-        }
-    if (pid > 0) {
-        exit(EXIT_SUCCESS);
-        }
-    umask(0);
-    if (setsid() < 0) {
-        perror("Error: setsid() failed");
-        }
-    if ((chdir("/")) < 0) {
-        exit(EXIT_FAILURE);
-        }
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+    // // Making the program run as a daemon (Modul)
+    // pid_t pid, sid;
+    // pid = fork();
+    // if (pid < 0) {
+    //     printf("Fork Failed!\n");
+    //     exit(EXIT_FAILURE);
+    //     }
+    // if (pid > 0) {
+    //     exit(EXIT_SUCCESS);
+    //     }
+    // umask(0);
+    // if (setsid() < 0) {
+    //     perror("Error: setsid() failed");
+    //     }
+    // if ((chdir("/")) < 0) {
+    //     exit(EXIT_FAILURE);
+    //     }
+    // close(STDIN_FILENO);
+    // close(STDOUT_FILENO);
+    // close(STDERR_FILENO);
 
     while (1) {
         // accept incoming connection
