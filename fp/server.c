@@ -464,25 +464,23 @@ void list_user(const char* channel, connection_t* conn) {
 
 
 void join_channel(const char* username, const char* channel, connection_t* conn) {
-    // Check if the channel directory exists
     char channel_path[512];
     sprintf(channel_path, "%s/%s", path, channel);
     struct stat st;
-    if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
+    if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) { // does it exist
         char response[BUFFER_SIZE];
-        sprintf(response, "%s tidak ada", channel);
+        sprintf(response, "%s doesn't exist", channel);
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
 
-    // Check if user is ROOT in users.csv
-    FILE* users_file = fopen(path_user, "r");
+    FILE* users_file = fopen(path_user, "r"); // is user root
     if (!users_file) {
-        char response[] = "Gagal membuka file users.csv";
+        char response[] = "Error opening users.csv";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
@@ -510,10 +508,9 @@ void join_channel(const char* username, const char* channel, connection_t* conn)
     fclose(users_file);
 
     if (is_root) {
-        // If ROOT, join without further checks
-        snprintf(conn->channelLogged, sizeof(conn->channelLogged), "%s", channel);
+        snprintf(conn->channelLogged, sizeof(conn->channelLogged), "%s", channel); // join instantly if root
 
-        // Ensure ROOT role is recorded in auth.csv
+        // ensure root is written in auth.csv
         char auth_path[512];
         sprintf(auth_path, "%s/%s/admin/auth.csv", path, channel);
         FILE* auth_file = fopen(auth_path, "r+");
@@ -542,9 +539,9 @@ void join_channel(const char* username, const char* channel, connection_t* conn)
                 }
             }
         else {
-            char response[] = "Gagal membuka file auth.csv";
+            char response[] = "Error opening auth.csv";
             if (write(conn->sock, response, strlen(response)) < 0) {
-                perror("Gagal mengirim respons ke client");
+                perror("Response send failed");
                 }
             return;
             }
@@ -552,19 +549,19 @@ void join_channel(const char* username, const char* channel, connection_t* conn)
         char response[BUFFER_SIZE];
         sprintf(response, "[%s/%s]", username, channel);
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
 
-    // Check if user is ADMIN/USER/BANNED in auth.csv
+    // is user admin/user/banned
     char auth_path[512];
     sprintf(auth_path, "%s/%s/admin/auth.csv", path, channel);
     FILE* auth_file = fopen(auth_path, "r");
     if (!auth_file) {
-        char response[] = "Gagal membuka file auth.csv";
+        char response[] = "Error opening auth.csv";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
@@ -598,34 +595,34 @@ void join_channel(const char* username, const char* channel, connection_t* conn)
     fclose(auth_file);
 
     if (is_banned) {
-        char response[] = "Anda telah diban, silahkan menghubungi admin";
+        char response[] = "You have been banneed, please contact an admin.";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
 
     if (is_admin || is_user) {
-        snprintf(conn->channelLogged, sizeof(conn->channelLogged), "%s", channel);
+        sprintf(conn->channelLogged, "%s", channel);
         char response[BUFFER_SIZE];
         sprintf(response, "[%s/%s]", username, channel);
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
-        return; // ADMIN or already registered USER joined without further checks
+        return; // admin/user immidiately join
         }
     else {
-        // If not ROOT, ADMIN, or already registered USER, prompt for key
+        // else, ask for key
         char response[] = "Key: ";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
 
         char key[BUFFER_SIZE];
         memset(key, 0, sizeof(key));
 
         if (recv(conn->sock, key, sizeof(key), 0) < 0) {
-            perror("Gagal menerima key dari client");
+            perror("Failed to receive key from client");
             return;
             }
         verifyKey(username, channel, key, conn);
@@ -633,32 +630,31 @@ void join_channel(const char* username, const char* channel, connection_t* conn)
     }
 
 void join_room(const char* channel, const char* room, connection_t* conn) {
-    // Check if the room directory exists
     char room_path[256];
-    snprintf(room_path, sizeof(room_path), "%s/%s/%s", path, channel, room);
+    sprintf(room_path, "%s/%s/%s", path, channel, room);
     struct stat st;
-    if (stat(room_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
-        char response[] = "Room tidak ada di channel";
+    if (stat(room_path, &st) == -1 || !S_ISDIR(st.st_mode)) { // does it exist
+        char response[] = "Room doesn't exist in the channel";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         return;
         }
 
-    snprintf(conn->roomLogged, sizeof(conn->roomLogged), "%s", room);
+    sprintf(conn->roomLogged, "%s", room);
     char response[BUFFER_SIZE];
-    snprintf(response, sizeof(response), "[%s/%s/%s]", conn->userLogged, channel, room);
+    sprintf(response, "[%s/%s/%s]", conn->userLogged, channel, room);
     if (write(conn->sock, response, strlen(response)) < 0) {
-        perror("Gagal mengirim respons ke client");
+        perror("Response send failed");
         }
     }
 
-void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* connection) {
+void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* conn) {
     char* start_quote = strchr(message, '\"');
     char* end_quote = strrchr(message, '\"');
 
     if (start_quote == NULL || end_quote == NULL || start_quote == end_quote) {
-        sendErrorResponse(connection, "Usage: CHAT \"<message>\"");
+        perror("Usage: CHAT \"<message>\"");
         return;
         }
 
@@ -668,16 +664,16 @@ void send_message(const char* username, const char* channel, const char* room, c
     trimmed[message_length] = '\0';
 
     if (trimmed[0] == '\0') {
-        sendErrorResponse(connection, "Message cannot be empty");
+        perror("Message cannot be empty");
         return;
         }
 
     char chat_path[512];
-    snprintf(chat_path, sizeof(chat_path), "%s/%s/%s/chat.csv", path, channel, room);
+    sprintf(chat_path, "%s/%s/%s/chat.csv", path, channel, room);
 
     FILE* chat_file = fopen(chat_path, "a");
     if (!chat_file) {
-        sendErrorResponse(connection, "Failed to open chat.csv");
+        perror("Failed to open chat.csv");
         return;
         }
 
@@ -693,8 +689,8 @@ void send_message(const char* username, const char* channel, const char* room, c
     fclose(chat_file);
 
     char response[100];
-    snprintf(response, sizeof(response), "Message sent successfully");
-    if (write(connection->sock, response, strlen(response)) < 0) {
+    sprintf(response, "Message sent successfully");
+    if (write(conn->sock, response, strlen(response)) < 0) {
         perror("Failed to send response to client");
         }
     }
@@ -714,14 +710,14 @@ int find_last_id(FILE* chat_file) {
     return last_id;
     }
 
-void see_messages(const char* channel_name, const char* room, connection_t* connection) {
+void see_messages(const char* channel_name, const char* room, connection_t* conn) {
     char messages_path[512];
     sprintf(messages_path, "%s/%s/%s/messages.csv", path, channel_name, room);
 
     FILE* messages_file = fopen(messages_path, "r");
     if (!messages_file) {
         char response[] = "Error opening messages.csv or no messages in room";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Failed to send response to client");
             }
         return;
@@ -741,15 +737,15 @@ void see_messages(const char* channel_name, const char* room, connection_t* conn
         message[strcspn(message, "\n")] = '\0';
 
         if (date && message_id && sender && message) {
-            snprintf(response + strlen(response), sizeof(response) - strlen(response), "[%s][%s][%s] “%s” \n", date, message_id, sender, message);
+            sprintf(response + strlen(response), "[%s][%s][%s] “%s” \n", date, message_id, sender, message);
             }
         }
 
     if (!has_messages) {
-        snprintf(response, sizeof(response), "No messages");
+        sprintf(response, "No messages");
         }
 
-    if (write(connection->sock, response, strlen(response)) < 0) {
+    if (write(conn->sock, response, strlen(response)) < 0) {
         perror("Failed to send response to client");
         }
 
@@ -845,7 +841,7 @@ void remove_root(const char* target, connection_t* conn) {
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn) {
     FILE* channelsFile = fopen(path_channels, "r");
     if (!channelsFile) {
-        sendErrorResponse(conn, "Error opening channels.csv\n");
+        perror("Error opening channels.csv\n");
         return;
         }
 
@@ -872,7 +868,7 @@ void verifyKey(const char* user, const char* channel, const char* key, connectio
     if (keyValid) {
         FILE* usersFile = fopen(path_user, "r");
         if (!usersFile) {
-            sendErrorResponse(conn, "Error opening users.csv\n");
+            perror("Error opening users.csv\n");
             return;
             }
 
@@ -908,15 +904,15 @@ void verifyKey(const char* user, const char* channel, const char* key, connectio
                     }
                 }
             else {
-                sendErrorResponse(conn, "Error opening auth.csv\n");
+                perror("Error opening auth.csv\n");
                 }
             }
         else {
-            sendErrorResponse(conn, "User tidak ditemukan\n");
+            perror("User not found\n");
             }
         }
     else {
-        sendErrorResponse(conn, "Key salah\n");
+        perror("Wrong key\n");
         }
 
 
@@ -934,7 +930,7 @@ void exit_func(connection_t* conn) {
         char response[BUFFER_SIZE];
         snprintf(response, sizeof(response), "[%s/%s]", conn->userLogged, conn->channelLogged);
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         }
     else if (strlen(conn->channelLogged) > 0) {
@@ -942,13 +938,13 @@ void exit_func(connection_t* conn) {
         char response[BUFFER_SIZE];
         snprintf(response, sizeof(response), "[%s]", conn->userLogged);
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         }
     else {
         char response[] = "Anda telah keluar dari aplikasi";
         if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
+            perror("Response send failed");
             }
         close(conn->sock);
         pthread_exit(NULL);
