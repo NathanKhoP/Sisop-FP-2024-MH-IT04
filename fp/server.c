@@ -38,7 +38,7 @@ typedef struct {
     } connection_t;
 
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn);
-
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection);
 
 void make_folder(char* folder_path) {
     struct stat st = { 0 };
@@ -753,8 +753,81 @@ void see_messages(const char* channel_name, const char* room, connection_t* conn
     fclose(messages_file);
     }
 
-void edit_message(const char* channel, const char* room, int id_chat, const char* new_text, connection_t* conn) {
+void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* connection) {
+    char chat_file[512];
+    snprintf(chat_file, sizeof(chat_file), "%s/%s/%s/chat.csv", path, channel_name, room_name);
 
+    FILE* original_file = fopen(chat_file, "r");
+    if (!original_file) {
+        const char error_msg[] = "Error opening chat.csv";
+        send_response(connection, error_msg);
+        return;
+        }
+
+    char temp_file[512];
+    snprintf(temp_file, sizeof(temp_file), "%s/%s/%s/chat_temp.csv", path, channel_name, room_name);
+    FILE* temp = fopen(temp_file, "w");
+    if (!temp) {
+        const char error_msg[] = "Error creating temporary file for editing chat";
+        send_response(connection, error_msg);
+        fclose(original_file);
+        return;
+        }
+
+    bool found = process_chat_file(original_file, temp, message_id, new_text);
+
+    fclose(original_file);
+    fclose(temp);
+
+    finalize_modification(chat_file, temp_file, found, message_id, connection);
+    }
+
+void send_response(connection_t* connection, const char* message) {
+    if (write(connection->sock, message, strlen(message)) < 0) {
+        perror("Failed to send response to client");
+        }
+    }
+
+bool process_chat_file(FILE* original_file, FILE* temp_file, int message_id, const char* new_text) {
+    char buffer[512];
+    bool found = false;
+
+    while (fgets(buffer, sizeof(buffer), original_file)) {
+        char* tokens[4];
+        int i = 0;
+        char* token = strtok(buffer, "|");
+        while (token != NULL && i < 4) {
+            tokens[i++] = token;
+            token = strtok(NULL, "|");
+            }
+
+        int current_id = atoi(tokens[1]);
+        if (current_id == message_id) {
+            found = true;
+            fprintf(temp_file, "%s|%d|%s|%s\n", tokens[0], current_id, tokens[2], new_text);
+            }
+        else {
+            fprintf(temp_file, "%s|%d|%s|%s\n", tokens[0], current_id, tokens[2], tokens[3]);
+            }
+        }
+
+    return found;
+    }
+
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection) {
+    if (found) {
+        remove(original_path);
+        rename(temp_path, original_path);
+        char success_msg[100];
+        snprintf(success_msg, sizeof(success_msg), "Chat with ID %d edited", message_id);
+        send_response(connection, success_msg);
+        }
+    else {
+        remove(temp_path);
+        char not_found_msg[100];
+        snprintf(not_found_msg, sizeof(not_found_msg), "Chat with ID %d not found", message_id);
+        send_response(connection, not_found_msg);
+        }
     }
 
 void edit_channel(const char* old_channel, const char* new_channel, connection_t* conn) {
