@@ -26,8 +26,44 @@ void cmd_func(const char *cmd, char *usr, char *ch, char *room) {
         perror("Response receive failed");
         return;
     }
-    resp[n] = '\0';
-    printf("%s\n", resp);
+    else {
+        n = 0;
+        if (strstr(resp, "Key:") != NULL) {
+            char key[MAX_LEN];
+            printf("Key: ");
+            fgets(key, MAX_LEN, stdin);
+            key[strcspn(key, "\n")] = 0;
+            if (send(sock, key, strlen(key), 0) < 0) perror("Key send failed");
+
+            memset(resp, 0, sizeof(resp));
+            if (recv(sock, resp, MAX_LEN - 1, 0) < 0) perror("Response receive failed");
+            else {
+                if (strstr(resp, "Wrong key") != NULL) {
+                    if (strlen(room) > 0) room[0] = '\0';
+                    else if (strlen(ch) > 0) ch[0] = '\0';
+                }
+            }
+        }
+        else if (strstr(resp, "doesn't exist") != NULL || strstr(resp, "Wrong Key") != NULL || strstr(resp, "You have been banned") != NULL) {
+            if (strlen(room) > 0) room[0] = '\0';
+            else if (strlen(ch) > 0) ch[0] = '\0';
+            printf("%s\n", resp);
+        }
+        else if (strstr(cmd, "JOIN") != NULL, strstr(resp, "Message sent successfully") != NULL || strstr(resp, "edited") != NULL || strstr(resp, "deleted") != NULL || strstr(cmd, "EXIT") != NULL) n++;
+        else if (strstr(resp, "exited the program") != NULL) {
+            close(sock);
+            exit(0);
+        }
+        else {
+            printf("%s\n", resp);
+        }
+    }
+}
+
+void print_output(const char *usr, const char *channel, const char *room) {
+    if (strlen(room) > 0) printf("\r[%s/%s/%s] ", usr, channel, room);
+    else if (strlen(channel) > 0) printf("\r[%s/%s] ", usr, channel);
+    else printf("[%s] ", usr);
 }
 
 int main(int argc, char *argv[]) {
@@ -84,35 +120,30 @@ int main(int argc, char *argv[]) {
             sprintf(usr, "%s", argv[2]);
             char *pass = argv[4];
             sprintf(cmd, "LOGIN %s %s", usr, pass);
-
             if (send(sock, cmd, strlen(cmd), 0) < 0) perror("Command send failed");
             char resp[MAX_LEN];
             memset(resp, 0, sizeof(resp));
-
             int n = recv(sock, resp, MAX_LEN - 1, 0);
             if (n < 0) perror("Response receive failed");
             else {
                 printf("%s\n", resp);
                 if (strstr(resp, "logged in") != NULL) {
                     while (1) {
-                        if (strlen(room) > 0) printf("[%s/%s/%s] ", usr, channel, room);
-                        else if (strlen(channel) > 0) printf("[%s/%s] ", usr, channel);
-                        else printf("[%s] ", usr);
-
+                        print_output(usr, channel, room);
+                        
                         if (fgets(cmd, MAX_LEN, stdin) == NULL) continue;
                         cmd[strcspn(cmd, "\n")] = 0;
 
-                        if (strcmp("JOIN", cmd) == 0) {
-                            if (strlen(channel) > 0) sprintf(room, "%s", cmd + 5);
-                            else if (strlen(channel) == 0) sprintf(channel, "%s", cmd + 5);
-                        }
-                        else if (strcmp("EXIT", cmd) == 0) {
+                        if (strncmp(cmd, "JOIN ", 5) == 0) {
+                            if (strlen(channel) == 0) snprintf(channel, sizeof(channel), "%s", cmd + 5);
+                            else snprintf(room, sizeof(room), "%s", cmd + 5);
+                        } else if (strcmp(cmd, "EXIT") == 0) {
                             if (strlen(room) > 0) room[0] = '\0';
-                            if (strlen(channel) > 0) channel[0] = '\0';
+                            else if (strlen(channel) > 0) channel[0] = '\0';
+                        } else if (strncmp(cmd, "EDIT PROFILE SELF -u", 20) == 0) {
+                            snprintf(usr, sizeof(usr), "%s", cmd + 21);
                         }
-                        else if (strcmp("EDIT PROFILE SELF -u" , cmd) == 0) {
-                            sprintf(usr, "%s", cmd + 21);
-                        }
+                        
                         cmd_func(cmd, usr, channel, room);
                     }
                 }
@@ -128,7 +159,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    cmd_func(cmd, usr, channel, room);
     close(sock);
     return 0;
 }

@@ -66,6 +66,12 @@ void remove_user(const char* channel, const char* target, connection_t* conn);
 void ban_user(const char* channel, const char* target, connection_t* conn);
 void unban_user(const char* channel, const char* target, connection_t* conn);
 
+void sendErrorResponse(connection_t* conn, const char* errorMsg) {
+    if (write(conn->sock, errorMsg, strlen(errorMsg)) < 0) {
+        perror("Response send failed");
+        }
+    }
+
 // LOG
 void log_activity(const char* channel, const char* message) {
     char log_path[512];
@@ -707,7 +713,7 @@ void send_message(const char* username, const char* channel, const char* room, c
     char* end_quote = strrchr(message, '\"');
 
     if (start_quote == NULL || end_quote == NULL || start_quote == end_quote) {
-        perror("Usage: CHAT \"<message>\"");
+        sendErrorResponse(conn, "Usage: CHAT \"<message>\"");
         return;
         }
 
@@ -717,7 +723,7 @@ void send_message(const char* username, const char* channel, const char* room, c
     trimmed[message_length] = '\0';
 
     if (trimmed[0] == '\0') {
-        perror("Message cannot be empty");
+        sendErrorResponse(conn, "Message cannot be empty");
         return;
         }
 
@@ -726,7 +732,7 @@ void send_message(const char* username, const char* channel, const char* room, c
 
     FILE* chat_file = fopen(chat_path, "a");
     if (!chat_file) {
-        perror("Failed to open chat.csv");
+        sendErrorResponse(conn, "Failed to open chat.csv");
         return;
         }
 
@@ -750,11 +756,11 @@ void send_message(const char* username, const char* channel, const char* room, c
 
 void see_messages(const char* channel_name, const char* room, connection_t* conn) {
     char messages_path[512];
-    sprintf(messages_path, "%s/%s/%s/messages.csv", path, channel_name, room);
+    sprintf(messages_path, "%s/%s/%s/chat.csv", path, channel_name, room);
 
     FILE* messages_file = fopen(messages_path, "r");
     if (!messages_file) {
-        char response[] = "Error opening messages.csv or no messages in room";
+        char response[] = "Error opening chat.csv or no messages in room";
         if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Failed to send response to client");
             }
@@ -1291,7 +1297,7 @@ void remove_root(const char* target, connection_t* conn) {
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn) {
     FILE* channelsFile = fopen(path_channels, "r");
     if (!channelsFile) {
-        perror("Error opening channels.csv\n");
+        sendErrorResponse(conn, "Error opening channels.csv\n");
         return;
         }
 
@@ -1318,7 +1324,7 @@ void verifyKey(const char* user, const char* channel, const char* key, connectio
     if (keyValid) {
         FILE* usersFile = fopen(path_user, "r");
         if (!usersFile) {
-            perror("Error opening users.csv\n");
+            sendErrorResponse(conn, "Error opening users.csv\n");
             return;
             }
 
@@ -1354,18 +1360,16 @@ void verifyKey(const char* user, const char* channel, const char* key, connectio
                     }
                 }
             else {
-                perror("Error opening auth.csv\n");
+                sendErrorResponse(conn, "Error opening auth.csv\n");
                 }
             }
         else {
-            perror("User not found\n");
+            sendErrorResponse(conn, "User not found\n");
             }
         }
     else {
-        perror("Wrong key\n");
+        sendErrorResponse(conn, "Wrong key\n");
         }
-
-
     }
 
 void exit_func(connection_t* conn) {
@@ -1386,7 +1390,7 @@ void exit_func(connection_t* conn) {
             }
         }
     else {
-        char response[] = "Anda telah keluar dari aplikasi";
+        char response[] = "You have exited the program";
         if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
