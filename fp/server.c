@@ -1780,10 +1780,20 @@ void* discorit_handler(void* input) {
                 }
             }
         // else if (strcmp(token, "BAN") == 0) {
-
+        //     token = strtok(NULL, " ");
+        //     if (token == NULL) {
+        //         sendErrorResponse(conn, "Invalid command\n");
+        //         continue;
+        //         }
+        //     ban_user(conn->channelLogged, token, conn);
         //     }
         // else if (strcmp(token, "UNBAN") == 0) {
-
+        //     token = strtok(NULL, " ");
+        //     if (token == NULL) {
+        //         sendErrorResponse(conn, "Invalid command\n");
+        //         continue;
+        //         }
+        //     unban_user(conn->channelLogged, token, conn);
         //     }
         else if (strcmp(token, "REMOVE") == 0) {
             token = strtok(NULL, " ");
