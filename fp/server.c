@@ -653,67 +653,67 @@ void join_room(const char* channel, const char* room, connection_t* conn) {
         }
     }
 
-void send_chat(const char* username, const char* channel, const char* room, const char* message, connection_t* conn) {
-    char* startquote = strchr(message, '\"');
-    char* endquote = strrchr(message, '\"');
+void send_message(const char* username, const char* channel, const char* room, const char* message, connection_t* connection) {
+    char* start_quote = strchr(message, '\"');
+    char* end_quote = strrchr(message, '\"');
 
-    if (startquote == NULL || endquote == NULL || startquote == endquote) {
-        char response[] = "Penggunaan: CHAT \"<pesan>\"";
-        if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
-            }
+    if (start_quote == NULL || end_quote == NULL || start_quote == end_quote) {
+        sendErrorResponse(connection, "Usage: CHAT \"<message>\"");
         return;
         }
 
-    char message_trimmed[BUFFER_SIZE];
-    memset(message_trimmed, 0, sizeof(message_trimmed));
-    strncpy(message_trimmed, message + 1, endquote - startquote - 1);
+    size_t message_length = end_quote - start_quote - 1;
+    char trimmed[message_length + 1];
+    strncpy(trimmed, message + 1, message_length);
+    trimmed[message_length] = '\0';
 
-    if (strlen(message_trimmed) == 0) {
-        char response[] = "Pesan tidak boleh kosong";
-        if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
-            }
+    if (trimmed[0] == '\0') {
+        sendErrorResponse(connection, "Message cannot be empty");
         return;
         }
 
-    sprintf(path, "%s/%s/%s/chat.csv", path, channel, room);
-    FILE* chat_file = fopen(path, "a+");
+    char chat_path[512];
+    snprintf(chat_path, sizeof(chat_path), "%s/%s/%s/chat.csv", path, channel, room);
+
+    FILE* chat_file = fopen(chat_path, "a");
     if (!chat_file) {
-        char response[] = "Gagal membuka file chat.csv";
-        if (write(conn->sock, response, strlen(response)) < 0) {
-            perror("Gagal mengirim respons ke client");
-            }
+        sendErrorResponse(connection, "Failed to open chat.csv");
         return;
         }
 
-    // Get the last chat ID
-    int last_id = 0;
+    int last_id = find_last_id(chat_file);
+    int id = last_id + 1;
+
+    time_t current_time = time(NULL);
+    struct tm* time_info = localtime(&current_time);
+    char date[30];
+    strftime(date, sizeof(date), "%d/%m/%Y %H:%M:%S", time_info);
+
+    fprintf(chat_file, "%s|%d|%s|%s\n", date, id, username, trimmed);
+    fclose(chat_file);
+
+    char response[100];
+    snprintf(response, sizeof(response), "Message sent successfully");
+    if (write(connection->sock, response, strlen(response)) < 0) {
+        perror("Failed to send response to client");
+        }
+    }
+
+int find_last_id(FILE* chat_file) {
     char line[512];
+    int last_id = 0;
+
     while (fgets(line, sizeof(line), chat_file)) {
-        char* token = strtok(line, "|"); // date
-        token = strtok(NULL, "|"); // id_chat
+        char* token = strtok(line, "|");
+        token = strtok(NULL, "|");
         if (token) {
             last_id = atoi(token);
             }
         }
 
-    int id_chat = last_id + 1;
-
-    time_t now = time(NULL);
-    struct tm* t = localtime(&now);
-    char date[30];
-    strftime(date, sizeof(date), "%d/%m/%Y %H:%M:%S", t);
-
-    fprintf(chat_file, "%s|%d|%s|%s\n", date, id_chat, username, message_trimmed);
-    fclose(chat_file);
-
-    char response[100];
-    snprintf(response, sizeof(response), "Pesan berhasil dikirim");
-    if (write(conn->sock, response, strlen(response)) < 0) {
-        perror("Gagal mengirim respons ke client");
-        }
+    return last_id;
     }
+
 void see_message(const char* channel, const char* room, connection_t* conn) {
 
     }
