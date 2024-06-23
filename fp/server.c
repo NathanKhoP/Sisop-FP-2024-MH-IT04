@@ -140,7 +140,7 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t*
         return;
         }
 
-    snprintf(salt, MAX_LEN, "$2a$10$%.22s", "SISOPGOATIT04SALTCODEREAL");
+    sprintf(salt, "$2a$10$%.22s", "SISOPGOATIT04SALTCODEREAL");
     strcpy(hashed, crypt(password, salt));
 
     fp = fopen(path_user, "a");
@@ -167,6 +167,7 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
     size_t len = 0;
     ssize_t read;
     bool isExist = false;
+    bool isPasswordCorrect = false;
     char salt[MAX_LEN], hashed[MAX_LEN], file_hashed[MAX_LEN];
     int file_userid;
     char file_username[MAX_LEN], file_role[MAX_LEN];
@@ -179,53 +180,43 @@ void login_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* co
         char resp[] = "Error opening file\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
-            }
-        fsync(conn->sock);
         }
+        fsync(conn->sock);
+        return;
+    }
 
     while ((read = getline(&line, &len, fp)) != -1) {
         char* token = strtok(line, ",");
         token = strtok(NULL, ",");
         if (strcmp(token, username) != 0) continue;
-
+        
         isExist = true;
         token = strtok(NULL, ",");
-        sprintf(file_hashed, "%s", token);
-
+        strcpy(file_hashed, token);
         if (strcmp(hashed, file_hashed) == 0) {
-            sprintf(conn->userLogged, "%s", username);
-            token = strtok(file_role, ",");
-            sprintf(conn->roleLogged, "%s", token);
-            }
-        else {
-            char resp[] = "Invalid password\n";
-            if (write(conn->sock, resp, strlen(resp)) < 0) {
-                perror("Response send failed");
-                }
-            fsync(conn->sock);
-            }
-        }
-
-    fclose(fp);
-
-    if (!isExist) {
-        char resp[] = "Invalid username\n";
-        if (write(conn->sock, resp, strlen(resp)) < 0) {
-            perror("Response send failed");
-            }
-        fsync(conn->sock);
-        }
-
-    else {
-        char resp[100];
-        sprintf(resp, "%s logged in", username);
-        printf("%s\n", resp);
-        if (write(conn->sock, resp, strlen(resp)) < 0) {
-            perror("Response send failed");
-            }
-        fsync(conn->sock);
+            isPasswordCorrect = true;
+            strcpy(conn->userLogged, username);
+            token = strtok(NULL, ",");
+            strcpy(conn->roleLogged, token);
+            break;
         }
     }
+
+    fclose(fp);
+    if (line) free(line);
+
+    char resp[100];
+    if (!isExist) strcpy(resp, "Invalid username\n");
+    else if (!isPasswordCorrect) strcpy(resp, "Invalid password\n");
+    else {
+        sprintf(resp, "%s logged in", username);
+        printf("%s\n", resp);
+    }
+    if (write(conn->sock, resp, strlen(resp)) < 0) {
+        perror("Response send failed");
+    }
+    fsync(conn->sock);
+}
 
 // ====================================================================================================
 // ====================================================================================================
@@ -357,10 +348,10 @@ void new_room(const char* username, const char* channel_name, const char* room, 
 
         if (strcmp(token, username) == 0) {
             token = strtok(NULL, ",");
-            if (strcmp(token, "ADMIN") == 0) {
+            if (strstr(token, "ADMIN") == 0) {
                 isAdmin = true;
                 }
-            else if (strcmp(token, "ROOT") == 0) {
+            else if (strstr(token, "ROOT") == 0) {
                 isRoot = true;
                 }
             }
@@ -368,7 +359,7 @@ void new_room(const char* username, const char* channel_name, const char* room, 
 
     fclose(auth);
 
-    if (!isAdmin && !isRoot) {
+    if (!isAdmin &&!isRoot) {
         char resp[] = "You are not an admin, you can't make a room on this channel\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
