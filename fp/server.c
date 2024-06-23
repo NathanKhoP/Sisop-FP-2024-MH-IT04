@@ -677,8 +677,7 @@ void send_chat(const char* username, const char* channel, const char* room, cons
         return;
         }
 
-    char path[256];
-    snprintf(path, sizeof(path), "%s/%s/%s/chat.csv", path, channel, room);
+    sprintf(path, "%s/%s/%s/chat.csv", path, channel, room);
     FILE* chat_file = fopen(path, "a+");
     if (!chat_file) {
         char response[] = "Gagal membuka file chat.csv";
@@ -715,7 +714,6 @@ void send_chat(const char* username, const char* channel, const char* room, cons
         perror("Gagal mengirim respons ke client");
         }
     }
-
 void see_message(const char* channel, const char* room, connection_t* conn) {
 
     }
