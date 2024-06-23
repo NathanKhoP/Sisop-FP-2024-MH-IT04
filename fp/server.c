@@ -40,24 +40,24 @@ typedef struct {
     } connection_t;
 
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn);
-void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection);
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* conn);
 void make_folder(char* folder_path);
 void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* conn);
 bool check_if_root_user(FILE* auth_file, const char* logged_user);
 bool check_if_admin_user(FILE* auth_file, const char* logged_user);
 void process_channels_file(FILE* channels_file, FILE* temp_file, const char* old_channel_name, const char* new_channel_name, bool* channel_found, bool* new_channel_exists);
-void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* connection);
+void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* conn);
 void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn);
 void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn);
 void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn);
 void remove_channel(const char* channel, connection_t* conn);
 void remove_room(const char* channel, const char* room, connection_t* conn);
 void remove_all_room(const char* channel, connection_t* conn);
-void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* connection);
+void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* conn);
 void send_response(connection_t* connection, const char* message);
 bool process_chat_file(FILE* original_file, FILE* temp_file, int message_id, const char* new_text);
-void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection);
-void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* connection);
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* conn);
+void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* conn);
 bool is_room_name_in_use(const char* channel, const char* room_name);
 bool does_room_exist(const char* channel, const char* room_name);
 bool rename_room(const char* channel, const char* old_room, const char* new_room);
@@ -95,6 +95,21 @@ void log_activity(const char* channel, const char* message) {
 void make_folder(char* folder_path) {
     struct stat st = { 0 };
     if (stat(folder_path, &st) == -1) mkdir(folder_path, 0777);
+    }
+
+void delete_folder(char* folder_path) {
+    DIR* dir = opendir(folder_path);
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+            char fpath[512];
+            sprintf(fpath, "%s/%s", folder_path, entry->d_name);
+            remove(fpath);
+            }
+        closedir(dir);
+        rmdir(folder_path);
+        }
     }
 
 void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* conn) {
@@ -796,41 +811,6 @@ void see_messages(const char* channel_name, const char* room, connection_t* conn
     fclose(messages_file);
     }
 
-void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* connection) {
-    char chat_file[512];
-    snprintf(chat_file, sizeof(chat_file), "%s/%s/%s/chat.csv", path, channel_name, room_name);
-
-    FILE* original_file = fopen(chat_file, "r");
-    if (!original_file) {
-        const char error_msg[] = "Error opening chat.csv";
-        send_response(connection, error_msg);
-        return;
-        }
-
-    char temp_file[512];
-    snprintf(temp_file, sizeof(temp_file), "%s/%s/%s/chat_temp.csv", path, channel_name, room_name);
-    FILE* temp = fopen(temp_file, "w");
-    if (!temp) {
-        const char error_msg[] = "Error creating temporary file for editing chat";
-        send_response(connection, error_msg);
-        fclose(original_file);
-        return;
-        }
-
-    bool found = process_chat_file(original_file, temp, message_id, new_text);
-
-    fclose(original_file);
-    fclose(temp);
-
-    finalize_modification(chat_file, temp_file, found, message_id, connection);
-    }
-
-void send_response(connection_t* connection, const char* message) {
-    if (write(connection->sock, message, strlen(message)) < 0) {
-        perror("Failed to send response to client");
-        }
-    }
-
 bool process_chat_file(FILE* original_file, FILE* temp_file, int message_id, const char* new_text) {
     char buffer[512];
     bool found = false;
@@ -857,29 +837,64 @@ bool process_chat_file(FILE* original_file, FILE* temp_file, int message_id, con
     return found;
     }
 
-void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection) {
+void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* conn) {
     if (found) {
         remove(original_path);
         rename(temp_path, original_path);
         char success_msg[100];
         snprintf(success_msg, sizeof(success_msg), "Chat with ID %d edited", message_id);
-        send_response(connection, success_msg);
+        send_response(conn, success_msg);
         }
     else {
         remove(temp_path);
         char not_found_msg[100];
         snprintf(not_found_msg, sizeof(not_found_msg), "Chat with ID %d not found", message_id);
-        send_response(connection, not_found_msg);
+        send_response(conn, not_found_msg);
         }
     }
 
-void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* connection) {
+void edit_message(const char* channel_name, const char* room_name, int message_id, const char* new_text, connection_t* conn) {
+    char chat_file[512];
+    snprintf(chat_file, sizeof(chat_file), "%s/%s/%s/chat.csv", path, channel_name, room_name);
+
+    FILE* original_file = fopen(chat_file, "r");
+    if (!original_file) {
+        const char error_msg[] = "Error opening chat.csv";
+        send_response(conn, error_msg);
+        return;
+        }
+
+    char temp_file[512];
+    snprintf(temp_file, sizeof(temp_file), "%s/%s/%s/chat_temp.csv", path, channel_name, room_name);
+    FILE* temp = fopen(temp_file, "w");
+    if (!temp) {
+        const char error_msg[] = "Error creating temporary file for editing chat";
+        send_response(conn, error_msg);
+        fclose(original_file);
+        return;
+        }
+
+    bool found = process_chat_file(original_file, temp, message_id, new_text);
+
+    fclose(original_file);
+    fclose(temp);
+
+    finalize_modification(chat_file, temp_file, found, message_id, conn);
+    }
+
+void send_response(connection_t* connection, const char* message) {
+    if (write(connection->sock, message, strlen(message)) < 0) {
+        perror("Failed to send response to client");
+        }
+    }
+
+void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* conn) {
     char auth_file_path[256];
     snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", path, old_channel_name);
     FILE* auth_file = fopen(auth_file_path, "r");
     if (!auth_file) {
         char response[] = "Error opening auth.csv";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         return;
@@ -888,21 +903,21 @@ void edit_channel(const char* old_channel_name, const char* new_channel_name, co
     FILE* users_file = fopen(path_user, "r");
     if (!users_file) {
         char response[] = "Error opening users.csv";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         return;
         }
 
-    bool is_root_user = check_if_root_user(users_file, connection->userLogged);
+    bool is_root_user = check_if_root_user(users_file, conn->userLogged);
     fclose(users_file);
 
-    bool is_admin_user = check_if_admin_user(auth_file, connection->userLogged);
+    bool is_admin_user = check_if_admin_user(auth_file, conn->userLogged);
     fclose(auth_file);
 
     if (!is_admin_user && !is_root_user) {
         char response[] = "You do not have permission to edit the channel";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         return;
@@ -911,7 +926,7 @@ void edit_channel(const char* old_channel_name, const char* new_channel_name, co
     FILE* channels_file = fopen(path_channels, "r+");
     if (!channels_file) {
         char response[] = "Error opening channels.csv";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         return;
@@ -922,7 +937,7 @@ void edit_channel(const char* old_channel_name, const char* new_channel_name, co
     FILE* temp_file = fopen(temp_file_path, "w+");
     if (!temp_file) {
         char response[] = "Error creating temporary file for editing channel";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         fclose(channels_file);
@@ -939,20 +954,20 @@ void edit_channel(const char* old_channel_name, const char* new_channel_name, co
     if (new_channel_exists) {
         remove(temp_file_path);
         char response[] = "Channel name already in use";
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         return;
         }
 
     if (channel_found) {
-        finalize_channel_update(temp_file_path, old_channel_name, new_channel_name, is_root_user, connection);
+        finalize_channel_update(temp_file_path, old_channel_name, new_channel_name, is_root_user, conn);
         }
     else {
         remove(temp_file_path);
         char response[100];
         snprintf(response, sizeof(response), "Channel %s not found", old_channel_name);
-        if (write(connection->sock, response, strlen(response)) < 0) {
+        if (write(conn->sock, response, strlen(response)) < 0) {
             perror("Response send failed");
             }
         }
@@ -1012,7 +1027,7 @@ void process_channels_file(FILE* channels_file, FILE* temp_file, const char* old
         }
     }
 
-void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* connection) {
+void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* conn) {
     remove(path_channels);
     rename(temp_file_path, path_channels);
 
@@ -1033,7 +1048,7 @@ void finalize_channel_update(const char* temp_file_path, const char* old_channel
 
     char response[100];
     snprintf(response, sizeof(response), "%s successfully changed to %s", old_channel_name, new_channel_name);
-    if (write(connection->sock, response, strlen(response)) < 0) {
+    if (write(conn->sock, response, strlen(response)) < 0) {
         perror("Response send failed");
         }
     }
@@ -1225,27 +1240,191 @@ void edit_profile(const char* username, const char* new_value, bool is_password,
     }
 
 void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn) {
+        char chat_path[256];
+        sprintf(chat_path, "%s/%s/%s/chat.csv", path, channel, room);
+        FILE* chat_file = fopen(chat_path, "r");
+        if (!chat_file) {
+            send_response(conn, "Error opening chat.csv");
+            return;
+        }
 
+        char temp_path[256];
+        sprintf(temp_path, "%s/%s/%s/chat_temp.csv", path, channel, room);
+        FILE* temp_file = fopen(temp_path, "w");
+        if (!temp_file) {
+            send_response(conn, "Error creating temporary file for editing chat");
+            fclose(chat_file);
+            return;
+        }
+
+        bool found = process_chat_file(chat_file, temp_file, chat_id, "");
+
+        fclose(chat_file);
+        fclose(temp_file);
+
+        finalize_modification(chat_path, temp_path, found, chat_id, conn);
     }
 
 void remove_channel(const char* channel, connection_t* conn) {
+        FILE *users_file = fopen(path_user, "r");
+        if(!users_file) {
+            send_response(conn, "Error opening users.csv");
+            return;
+        }
 
+        char line[256];
+        bool is_root_user = check_if_root_user(users_file, conn->userLogged);
+        bool is_admin_user = check_if_admin_user(users_file, conn->userLogged);
+        fclose(users_file);
+
+        if (!is_root_user && !is_admin_user) {
+            send_response(conn, "You do not have permission to remove the channel");
+            return;
+        }
+
+        char path_channel[256];
+        sprintf(path_channel, "%s/%s", path, channel);
+        struct stat st;
+        if (stat(path_channel, &st) == -1 || !S_ISDIR(st.st_mode)) {
+            send_response(conn, "Channel does not exist");
+            return;
+        }
+
+        deele_folder(path_channel);
+
+        FILE *channels_file = fopen(path_channels, "r");
+        if (!channels_file) {
+            send_response(conn, "Error opening channels.csv");
+            return;
+        }
+
+        char temp_file_path[256];
+        sprintf(temp_file_path, "%s/channels_temp.csv", path);
+        FILE *tfile = fopen(temp_file_path, "w+");
+        if (!tfile) {
+            send_response(conn, "Error creating temporary file for editing channel");
+            fclose(channels_file);
+            return;
+        }
+
+        while (fgets(line, sizeof(line), channels_file)) {
+            char *token = strtok(line, ",");
+            token = strtok(NULL, ",");
+            if (token && strcmp(token, channel) != 0) {
+                fprintf(tfile, "%s", line);
+            }
+        }
+
+        fclose(channels_file);
+        fclose(tfile);
+
+        remove(path_channels);
+        rename(temp_file_path, path_channels);
+
+        char resp[100];
+        sprintf(resp, "Channel %s removed", channel);
+        send_response(conn, resp);
+        
     }
 
 void remove_room(const char* channel, const char* room, connection_t* conn) {
+        bool has_permission = has_permission_to_edit_room(conn, channel);
+        if (!has_permission) {
+            send_response(conn, "You do not have permission to remove the room");
+            return;
+        }
 
+        char room_path[256];
+        sprintf(room_path, "%s/%s/%s", path, channel, room);
+        struct stat st;
+        if (stat(room_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
+            send_response(conn, "Room does not exist");
+            return;
+        }
+
+        delete_folder(room_path);
+
+        char resp[100];
+        sprintf(resp, "Room %s removed", room);
+        send_response(conn, resp);
     }
 
 void remove_all_room(const char* channel, connection_t* conn) {
+        bool has_permission = has_permission_to_edit_room(conn, channel);
+        if (!has_permission) {
+            send_response(conn, "You do not have permission to remove all rooms");
+            return;
+        }
 
-    }
+        char channel_path[256];
+        sprintf(channel_path, "%s/%s", path, channel);
+        struct stat st;
+        if (stat(channel_path, &st) == -1 || !S_ISDIR(st.st_mode)) {
+            send_response(conn, "Channel does not exist");
+            return;
+        }
 
-void remove_folder(const char* folder_path, connection_t* conn) {
+        struct dirent *entry;
+        while ((entry = readdir(channel_path)) != NULL) {
+            if (strcmp(entry->d_name, "ADMIN") != 0 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                char room_path[256];
+                sprintf(room_path, "%s/%s", channel_path, entry->d_name);
+                
+                delete_folder(room_path);
+            }
+        }
 
+        char resp[100];
+        sprintf(resp, "All rooms in channel %s removed", channel);
+        send_response(conn, resp);
     }
 
 void remove_user(const char* channel, const char* target, connection_t* conn) {
+        char auth_path[256];
+        sprintf(auth_path, "%s/%s/admin/auth.csv", path, channel);
+        FILE *auth_file = fopen(auth_path, "r");
+        if (!auth_file) {
+            send_response(conn, "Error opening auth.csv");
+            return;
+        }
 
+        char temp_file_path[256];
+        sprintf(temp_file_path, "%s/auth_temp.csv", path);
+        FILE *temp_file = fopen(temp_file_path, "w");
+        if (!temp_file) {
+            send_response(conn, "Error creating temporary file for editing auth");
+            fclose(auth_file);
+            return;
+        }
+
+        bool found = false;
+        char line[256];
+        while (fgets(line, sizeof(line), auth_file)) {
+            char *token = strtok(line, ",");
+            if (token == NULL) continue;
+            token = strtok(NULL, ",");
+            if (token == NULL) continue;
+            if (strcmp(token, target) == 0) {
+                found = true;
+                continue;
+            }
+            fprintf(temp_file, "%s", line);
+        }
+
+        fclose(auth_file);
+        fclose(temp_file);
+
+        if (found) {
+            remove(auth_path);
+            rename(temp_file_path, auth_path);
+            char resp[100];
+            sprintf(resp, "User %s removed from channel %s", target, channel);
+            send_response(conn, resp);
+        } else {
+            remove(temp_file_path);
+            send_response(conn, "User not found in channel");
+        }
+        
     }
 
 void ban_user(const char* channel, const char* target, connection_t* conn) {
