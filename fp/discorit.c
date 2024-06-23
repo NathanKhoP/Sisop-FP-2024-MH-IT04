@@ -133,15 +133,17 @@ int main(int argc, char *argv[]) {
                         
                         if (fgets(cmd, MAX_LEN, stdin) == NULL) continue;
                         cmd[strcspn(cmd, "\n")] = 0;
-
+                        
                         if (strncmp(cmd, "JOIN ", 5) == 0) {
-                            if (strlen(channel) == 0) snprintf(channel, sizeof(channel), "%s", cmd + 5);
-                            else snprintf(room, sizeof(room), "%s", cmd + 5);
-                        } else if (strcmp(cmd, "EXIT") == 0) {
+                            if (strlen(channel) == 0) sprintf(channel, "%s", cmd + 5);
+                            else sprintf(room, "%s", cmd + 5);
+                        }
+                        else if (strcmp(cmd, "EXIT") == 0) {
                             if (strlen(room) > 0) room[0] = '\0';
                             else if (strlen(channel) > 0) channel[0] = '\0';
-                        } else if (strncmp(cmd, "EDIT PROFILE SELF -u", 20) == 0) {
-                            snprintf(usr, sizeof(usr), "%s", cmd + 21);
+                        }
+                        else if (strncmp(cmd, "EDIT PROFILE SELF -u", 20) == 0) {
+                            sprintf(usr, "%s", cmd + 21);
                         }
                         
                         cmd_func(cmd, usr, channel, room);
