@@ -1862,26 +1862,26 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
         }
 
-    // // Making the program run as a daemon (Modul)
-    // pid_t pid, sid;
-    // pid = fork();
-    // if (pid < 0) {
-    //     printf("Fork Failed!\n");
-    //     exit(EXIT_FAILURE);
-    //     }
-    // if (pid > 0) {
-    //     exit(EXIT_SUCCESS);
-    //     }
-    // umask(0);
-    // if (setsid() < 0) {
-    //     perror("Error: setsid() failed");
-    //     }
-    // if ((chdir("/")) < 0) {
-    //     exit(EXIT_FAILURE);
-    //     }
-    // close(STDIN_FILENO);
-    // close(STDOUT_FILENO);
-    // close(STDERR_FILENO);
+    // Making the program run as a daemon (Modul)
+    pid_t pid, sid;
+    pid = fork();
+    if (pid < 0) {
+        printf("Fork Failed!\n");
+        exit(EXIT_FAILURE);
+        }
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+        }
+    umask(0);
+    if (setsid() < 0) {
+        perror("Error: setsid() failed");
+        }
+    if ((chdir("/")) < 0) {
+        exit(EXIT_FAILURE);
+        }
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
 
     while (1) {
         // accept incoming connection
