@@ -19,6 +19,8 @@
 #define PORT 8080
 #define MAX_LEN 1024
 #define MAX_USER 100
+#define SALT_SIZE 29
+#define BCRYPT_HASHSIZE 61
 #define BUFFER_SIZE 10240
 // #define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
 // #define path_user "/home/etern1ty/sisop_works/FP/fp/DiscorIT/users.csv"
@@ -60,6 +62,9 @@ bool is_room_name_in_use(const char* channel, const char* room_name);
 bool does_room_exist(const char* channel, const char* room_name);
 bool rename_room(const char* channel, const char* old_room, const char* new_room);
 void log_room_change(const char* channel, const char* old_room, const char* new_room, const char* username);
+void remove_user(const char* channel, const char* target, connection_t* conn);
+void ban_user(const char* channel, const char* target, connection_t* conn);
+void unban_user(const char* channel, const char* target, connection_t* conn);
 
 
 void make_folder(char* folder_path) {
@@ -1129,8 +1134,78 @@ void log_room_change(const char* channel, const char* old_room, const char* new_
     }
 
 
-void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn) {
+void update_user_profile(FILE* temp_file, const char* user_id, const char* user_name, const char* hash, const char* role, const char* new_value, bool is_password) {
+    if (is_password) {
+        char salt[SALT_SIZE];
+        snprintf(salt, sizeof(salt), "$2y$12$%.22s", "SISOPGOATIT04");
+        char new_hash[BCRYPT_HASHSIZE];
+        bcrypt_hashpw(new_value, salt, new_hash);
+        fprintf(temp_file, "%s,%s,%s,%s\n", user_id, user_name, new_hash, role);
+        }
+    else {
+        fprintf(temp_file, "%s,%s,%s,%s\n", user_id, new_value, hash, role);
+        }
+    }
 
+void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn) {
+    FILE* file = fopen(path_user, "r+");
+    if (!file) {
+        send_response(conn, "Gagal membuka file users.csv");
+        return;
+        }
+
+    char temp_path[256];
+    snprintf(temp_path, sizeof(temp_path), "%s/users_temp.csv", path);
+    FILE* temp_file = fopen(temp_path, "w");
+    if (!temp_file) {
+        send_response(conn, "Gagal membuat file sementara");
+        fclose(file);
+        return;
+        }
+
+    char line[256];
+    bool found = false;
+    bool name_exists = false;
+    while (fgets(line, sizeof(line), file)) {
+        char* user_id = strtok(line, ",");
+        char* user_name = strtok(NULL, ",");
+        char* hash = strtok(NULL, ",");
+        char* role = strtok(NULL, ",");
+
+        if (user_name && strcmp(user_name, new_value) == 0 && !is_password) {
+            name_exists = true;
+            break;
+            }
+
+        if (user_name && strcmp(user_name, username) == 0) {
+            found = true;
+            update_user_profile(temp_file, user_id, user_name, hash, role, new_value, is_password);
+            }
+        else {
+            fprintf(temp_file, "%s,%s,%s,%s\n", user_id, user_name, hash, role);
+            }
+        }
+
+    fclose(file);
+    fclose(temp_file);
+
+    if (name_exists) {
+        remove(temp_path);
+        send_response(conn, "Username sudah digunakan");
+        return;
+        }
+
+    if (found) {
+        remove(path_user);
+        rename(temp_path, path_user);
+        char response[100];
+        snprintf(response, sizeof(response), is_password ? "Password diupdate" : "Profil diupdate");
+        send_response(conn, response);
+        }
+    else {
+        remove(temp_path);
+        send_response(conn, "User tidak ditemukan");
+        }
     }
 
 void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn) {
