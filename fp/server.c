@@ -918,12 +918,6 @@ void verifyKey(const char* user, const char* channel, const char* key, connectio
 
     }
 
-void sendErrorResponse(connection_t* conn, const char* errorMsg) {
-    if (write(conn->sock, errorMsg, strlen(errorMsg)) < 0) {
-        perror("Response send failed");
-        }
-    }
-
 void exit_func(connection_t* conn) {
     if (strlen(conn->roomLogged) > 0) {
         memset(conn->roomLogged, 0, sizeof(conn->roomLogged));
