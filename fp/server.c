@@ -1082,13 +1082,93 @@ void* discorit_handler(void* input) {
             char* pass = strtok(NULL, " ");
             login_func(usr, pass, conn);
             }
+        else if (strcmp(token, "CREATE") == 0) {
+            token = strtok(NULL, " ");
+            if (strcmp(token, "CHANNEL") == 0) {
+                char* channel_name = strtok(NULL, " ");
+                token = strtok(NULL, " ");
+                char* key = strtok(NULL, " ");
+                new_channel(conn->userLogged, channel_name, key, conn);
+                }
+            else if (strcmp(token, "ROOM") == 0) {
+                char* room = strtok(NULL, " ");
+                new_room(conn->userLogged, conn->channelLogged, room, conn);
+                }
+            else {
+                resp = "Invalid command\n";
+                if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                    perror("Send failed");
+                    }
+                }
+            }
+        else if (strcmp(token, "LIST") == 0) {
+            token = strtok(NULL, " ");
+            if (strcmp(token, "CHANNEL") == 0) {
+                list_channel(conn);
+                }
+            else if (strcmp(token, "ROOM") == 0) {
+                list_room(conn->channelLogged, conn);
+                }
+            else if (strcmp(token, "USER") == 0) {
+                list_user(conn->channelLogged, conn);
+                }
+            else {
+                resp = "Invalid command\n";
+                if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                    perror("Send failed");
+                    }
+                }
+            }
+        else if (strcmp(token, "JOIN") == 0) {
+            token = strtok(NULL, " ");
+            if (strlen(conn->channelLogged) == 0) join_channel(conn->userLogged, token, conn);
+            else if (token == NULL) {
+                resp = "Invalid command\n";
+                if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                    perror("Send failed");
+                    }
+                }
+            else join_room(conn->channelLogged, token, conn);
+        }
+        else if (strcmp(token, "CHAT") == 0) {
+            char* message = buf + 5;
 
-        // ====================================================================================================
-        // CONTINUE
-        // ====================================================================================================
+            if (conn->channelLogged == NULL || conn->roomLogged == NULL) {
+                resp = "You are not in a channel or room\n";
+                if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                    perror("Send failed");
+                    }
+                continue;
+                }
+            send_message(conn->userLogged, conn->channelLogged, conn->roomLogged, message, conn);
+        }
+        else if (strcmp(token, "SEE") == 0) {
+            token = strtok(NULL, " ");
+            if (strcmp(token, "CHAT") == 0) {
+                see_messages(conn->channelLogged, conn->roomLogged, conn);
+                }
+            else {
+                resp = "Invalid command\n";
+                if (send(conn->sock, resp, strlen(resp), 0) != strlen(resp)) {
+                    perror("Send failed");
+                    }
+                }
+            }
+        else if (strcmp(token, "DEL") == 0) {
 
+        }
+        else if (strcmp(token, "BAN") == 0) {
 
+        }
+        else if (strcmp(token, "UNBAN") == 0) {
 
+        }
+        else if (strcmp(token, "REMOVE") == 0) {
+
+        }
+        else if (strcmp(token, "EXIT") == 0) {
+
+        }
         else {
             printf("Invalid command\n");
             break;
