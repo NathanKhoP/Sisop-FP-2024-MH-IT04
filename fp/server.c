@@ -39,6 +39,19 @@ typedef struct {
 
 void verifyKey(const char* user, const char* channel, const char* key, connection_t* conn);
 void finalize_modification(const char* original_path, const char* temp_path, bool found, int message_id, connection_t* connection);
+void make_folder(char* folder_path);
+void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* conn);
+bool check_if_root_user(FILE* auth_file, const char* logged_user);
+bool check_if_admin_user(FILE* auth_file, const char* logged_user);
+void process_channels_file(FILE* channels_file, FILE* temp_file, const char* old_channel_name, const char* new_channel_name, bool* channel_found, bool* new_channel_exists);
+void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* connection);
+void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn);
+void edit_profile(const char* username, const char* new_value, bool is_password, connection_t* conn);
+void remove_message(const char* channel, const char* room, int chat_id, connection_t* conn);
+void remove_channel(const char* channel, connection_t* conn);
+void remove_room(const char* channel, const char* room, connection_t* conn);
+void remove_all_room(const char* channel, connection_t* conn);
+
 
 void make_folder(char* folder_path) {
     struct stat st = { 0 };
@@ -830,8 +843,169 @@ void finalize_modification(const char* original_path, const char* temp_path, boo
         }
     }
 
-void edit_channel(const char* old_channel, const char* new_channel, connection_t* conn) {
+void edit_channel(const char* old_channel_name, const char* new_channel_name, connection_t* connection) {
+    char auth_file_path[256];
+    snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", path, old_channel_name);
+    FILE* auth_file = fopen(auth_file_path, "r");
+    if (!auth_file) {
+        char response[] = "Error opening auth.csv";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        return;
+        }
 
+    FILE* users_file = fopen(path_user, "r");
+    if (!users_file) {
+        char response[] = "Error opening users.csv";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        return;
+        }
+
+    bool is_root_user = check_if_root_user(users_file, connection->userLogged);
+    fclose(users_file);
+
+    bool is_admin_user = check_if_admin_user(auth_file, connection->userLogged);
+    fclose(auth_file);
+
+    if (!is_admin_user && !is_root_user) {
+        char response[] = "You do not have permission to edit the channel";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        return;
+        }
+
+    FILE* channels_file = fopen(path_channels, "r+");
+    if (!channels_file) {
+        char response[] = "Error opening channels.csv";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        return;
+        }
+
+    char temp_file_path[256];
+    snprintf(temp_file_path, sizeof(temp_file_path), "%s/channels_temp.csv", path);
+    FILE* temp_file = fopen(temp_file_path, "w+");
+    if (!temp_file) {
+        char response[] = "Error creating temporary file for editing channel";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        fclose(channels_file);
+        return;
+        }
+
+    bool channel_found = false;
+    bool new_channel_exists = false;
+    process_channels_file(channels_file, temp_file, old_channel_name, new_channel_name, &channel_found, &new_channel_exists);
+
+    fclose(channels_file);
+    fclose(temp_file);
+
+    if (new_channel_exists) {
+        remove(temp_file_path);
+        char response[] = "Channel name already in use";
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        return;
+        }
+
+    if (channel_found) {
+        finalize_channel_update(temp_file_path, old_channel_name, new_channel_name, is_root_user, connection);
+        }
+    else {
+        remove(temp_file_path);
+        char response[100];
+        snprintf(response, sizeof(response), "Channel %s not found", old_channel_name);
+        if (write(connection->sock, response, strlen(response)) < 0) {
+            perror("Response send failed");
+            }
+        }
+    }
+
+bool check_if_root_user(FILE* users_file, const char* logged_user) {
+    char line[256];
+    while (fgets(line, sizeof(line), users_file)) {
+        char* token = strtok(line, ",");
+        token = strtok(NULL, ",");
+        if (token && strcmp(token, logged_user) == 0) {
+            token = strtok(NULL, ",");
+            token = strtok(NULL, ",");
+            if (strstr(token, "ROOT") != NULL) {
+                return true;
+                }
+            break;
+            }
+        }
+    return false;
+    }
+
+bool check_if_admin_user(FILE* auth_file, const char* logged_user) {
+    char line[256];
+    while (fgets(line, sizeof(line), auth_file)) {
+        char* token = strtok(line, ",");
+        if (token == NULL) continue;
+        token = strtok(NULL, ",");
+        if (token == NULL) continue;
+        if (strcmp(token, logged_user) == 0) {
+            token = strtok(NULL, ",");
+            if (strstr(token, "ADMIN") != NULL) {
+                return true;
+                }
+            }
+        }
+    return false;
+    }
+
+void process_channels_file(FILE* channels_file, FILE* temp_file, const char* old_channel_name, const char* new_channel_name, bool* channel_found, bool* new_channel_exists) {
+    char line[256];
+    while (fgets(line, sizeof(line), channels_file)) {
+        char* id = strtok(line, ",");
+        char* channel_name = strtok(NULL, ",");
+        char* key = strtok(NULL, ",");
+        if (channel_name && strcmp(channel_name, new_channel_name) == 0) {
+            *new_channel_exists = true;
+            break;
+            }
+        if (channel_name && strcmp(channel_name, old_channel_name) == 0) {
+            *channel_found = true;
+            fprintf(temp_file, "%s,%s,%s", id, new_channel_name, key);
+            }
+        else {
+            fprintf(temp_file, "%s,%s,%s", id, channel_name, key);
+            }
+        }
+    }
+
+void finalize_channel_update(const char* temp_file_path, const char* old_channel_name, const char* new_channel_name, bool is_root_user, connection_t* connection) {
+    remove(path_channels);
+    rename(temp_file_path, path_channels);
+
+    char old_path[256];
+    snprintf(old_path, sizeof(old_path), "%s/%s", path, old_channel_name);
+    char new_path[256];
+    snprintf(new_path, sizeof(new_path), "%s/%s", path, new_channel_name);
+    rename(old_path, new_path);
+
+    char log_message[100];
+    if (is_root_user) {
+        snprintf(log_message, sizeof(log_message), "ROOT changed channel %s to %s", old_channel_name, new_channel_name);
+        }
+    else {
+        snprintf(log_message, sizeof(log_message), "ADMIN changed channel %s to %s", old_channel_name, new_channel_name);
+        }
+    log_activity(new_channel_name, log_message);
+
+    char response[100];
+    snprintf(response, sizeof(response), "%s successfully changed to %s", old_channel_name, new_channel_name);
+    if (write(connection->sock, response, strlen(response)) < 0) {
+        perror("Response send failed");
+        }
     }
 
 void edit_room(const char* channel, const char* old_room, const char* new_room, connection_t* conn) {
@@ -1129,7 +1303,7 @@ void* discorit_handler(void* input) {
                     }
                 }
             else join_room(conn->channelLogged, token, conn);
-        }
+            }
         else if (strcmp(token, "CHAT") == 0) {
             char* message = buf + 5;
 
@@ -1141,7 +1315,7 @@ void* discorit_handler(void* input) {
                 continue;
                 }
             send_message(conn->userLogged, conn->channelLogged, conn->roomLogged, message, conn);
-        }
+            }
         else if (strcmp(token, "SEE") == 0) {
             token = strtok(NULL, " ");
             if (strcmp(token, "CHAT") == 0) {
@@ -1156,19 +1330,19 @@ void* discorit_handler(void* input) {
             }
         else if (strcmp(token, "DEL") == 0) {
 
-        }
+            }
         else if (strcmp(token, "BAN") == 0) {
 
-        }
+            }
         else if (strcmp(token, "UNBAN") == 0) {
 
-        }
+            }
         else if (strcmp(token, "REMOVE") == 0) {
 
-        }
+            }
         else if (strcmp(token, "EXIT") == 0) {
 
-        }
+            }
         else {
             printf("Invalid command\n");
             break;
