@@ -19,7 +19,7 @@
 #define PORT 8080
 #define MAX_LEN 1024
 #define MAX_USER 100
-#define SALT_SIZE 29
+#define SALT_SIZE 30
 #define BCRYPT_HASHSIZE 61
 #define BUFFER_SIZE 10240
 #define path "/home/etern1ty/sisop_works/FP/fp/DiscorIT"
@@ -113,6 +113,11 @@ void delete_folder(char* folder_path) {
     }
 
 void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t* conn) {
+
+    #ifdef DEBUG
+    printf("Registering %s\n", username);
+    #endif
+
     if (username == NULL || password == NULL) {
         char resp[] = "Username or password cannot be empty\n";
         if (write(conn->sock, resp, strlen(resp)) < 0) {
@@ -141,6 +146,10 @@ void register_func(char username[MAX_LEN], char password[MAX_LEN], connection_t*
     if (ftell(fp) == 0) role = "ROOT";
     else role = "USER";
     rewind(fp);
+
+    #ifdef DEBUG
+    printf("Role: %s\n", role);
+    #endif
 
     while ((read = getline(&line, &len, fp)) != -1) {
         if (strstr(line, username) != NULL) { // strstr has an issue with usernames that are a substring of another username, but it's fine for now
@@ -1167,7 +1176,7 @@ void edit_room(const char* channel, const char* old_room, const char* new_room, 
 
 void update_user_profile(FILE* temp_file, const char* user_id, const char* user_name, const char* hash, const char* role, const char* new_value, bool is_password) {
     if (is_password) {
-        char salt[SALT_SIZE];
+        char salt[MAX_LEN];
         snprintf(salt, sizeof(salt), "$2y$12$%.22s", "SISOPGOATIT04SALTCODEREAL");
         char new_hash[BCRYPT_HASHSIZE];
         crypt(new_hash, (new_value, salt));
@@ -1368,7 +1377,7 @@ void remove_all_room(const char* channel, connection_t* conn) {
         struct dirent *entry;
         while ((entry = readdir(channel_dir)) != NULL) {
             if (strcmp(entry->d_name, "ADMIN") != 0 && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-                char room_path[256];
+                char room_path[1024];
                 sprintf(room_path, "%s/%s", channel_path, entry->d_name);
                 
                 delete_folder(room_path);
@@ -1863,26 +1872,26 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
         }
 
-    // // Making the program run as a daemon (Modul)
-    // pid_t pid, sid;
-    // pid = fork();
-    // if (pid < 0) {
-    //     printf("Fork Failed!\n");
-    //     exit(EXIT_FAILURE);
-    //     }
-    // if (pid > 0) {
-    //     exit(EXIT_SUCCESS);
-    //     }
-    // umask(0);
-    // if (setsid() < 0) {
-    //     perror("Error: setsid() failed");
-    //     }
-    // if ((chdir("/")) < 0) {
-    //     exit(EXIT_FAILURE);
-    //     }
-    // close(STDIN_FILENO);
-    // close(STDOUT_FILENO);
-    // close(STDERR_FILENO);
+    // Making the program run as a daemon (Modul)
+    pid_t pid, sid;
+    pid = fork();
+    if (pid < 0) {
+        printf("Fork Failed!\n");
+        exit(EXIT_FAILURE);
+        }
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+        }
+    umask(0);
+    if (setsid() < 0) {
+        perror("Error: setsid() failed");
+        }
+    if ((chdir("/")) < 0) {
+        exit(EXIT_FAILURE);
+        }
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
 
     while (1) {
         // accept incoming connection
