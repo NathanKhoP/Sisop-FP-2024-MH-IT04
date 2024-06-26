@@ -464,6 +464,7 @@ void list_channel(connection_t* conn) {
         if (write(conn->sock, resp, strlen(resp)) < 0) {
             perror("Response send failed");
             }
+        memset(resp, 0, sizeof(resp));
         count++;
         }
 
@@ -2029,11 +2030,15 @@ void* discorit_handler(void* input) {
                     sendErrorResponse(conn, "Invalid command\n");
                     continue;
                     }
-                edit_channel(conn->channelLogged, token, conn);
+                char* old_channel = token;
+                token = strtok(NULL, " ");
+                token = strtok(NULL, " ");
+                edit_channel(old_channel, token, conn);
                 }
             else if (strcmp(token, "ROOM") == 0) {
                 token = strtok(NULL, " ");
                 char* old_room = token;
+                token = strtok(NULL, " ");
                 token = strtok(NULL, " ");
                 if (token == NULL) {
                     sendErrorResponse(conn, "Invalid command\n");
