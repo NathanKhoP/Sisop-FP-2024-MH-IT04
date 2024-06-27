@@ -84,7 +84,7 @@ int cmd_handler(const char *buf) {
     }
 
     else if (strcmp(selected, "KEY") == 0){
-        handle_command("X X");
+        cmd_handler("X X");
         return 0;
     }
 
@@ -168,7 +168,7 @@ void cmd_parse(char *buf) {
         return; 
     }
 
-    if (handle_command(buf) == 2) {
+    if (cmd_handler(buf) == 2) {
         close(sock);
         exit(EXIT_SUCCESS);
     }
