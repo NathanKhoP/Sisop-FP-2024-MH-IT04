@@ -189,6 +189,22 @@ void *input_handler(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
+    if (argc < 5) {
+        printf("Usage: ./monitor LOGIN <username> -p <password>"
+               "\n(not enough arguments)");
+        return 1;
+    } 
+    if (strcmp(argv[1], "LOGIN") != 0) {
+        printf("Usage: ./monitor LOGIN <username> -p <password>"
+               "\n(invalid command)");
+        return 1;
+    } 
+    if (strcmp(argv[3], "-p") != 0) {
+        printf("Usage: ./monitor LOGIN <username> -p <password>"
+                "\n(missing -p flag)");
+        return 1;
+    }
+    
     // server connection start
     struct sockaddr_in serv_addr;
     int num1 = 10, num2 = 20, result;
